@@ -20,9 +20,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
 def _load_config() -> dict[str, Any]:
     config_path = os.path.join(ROOT_DIR, "config.json")
     if not os.path.exists(config_path):
-        raise FileNotFoundError(
-            f"Missing config.json at {config_path}. Copy config.example.json first."
-        )
+        example_path = os.path.join(ROOT_DIR, "config.example.json")
+        if os.path.exists(example_path):
+            config_path = example_path
+        else:
+            raise FileNotFoundError(
+                f"Missing config.json at {config_path}. Copy config.example.json first."
+            )
 
     with open(config_path, "r", encoding="utf-8") as file:
         return json.load(file)
