@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 import os
 import threading
 import uuid
@@ -9,10 +10,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 
-from cache import get_call_sheet_path, get_scraper_results_path, load_leads
-from classes.WebsiteSalesAgent import WebsiteSalesAgent
+from cache import (
+    get_call_sheet_path,
+    get_leads_excel_path,
+    get_scraper_results_path,
+    load_leads,
+    save_leads,
+)
+from classes.WebsiteSalesAgent import AgentStoppedError, WebsiteSalesAgent
 from config import (
     get_build_package_output_dir,
     get_country,
@@ -228,6 +237,7 @@ class DashboardState:
         self.lock = threading.Lock()
         self.logs: list[dict[str, str]] = []
         self.current_job: dict[str, Any] | None = None
+        self.current_stop_event: threading.Event | None = None
         self.job_history: list[dict[str, Any]] = []
         self.drive_uploads: list[dict[str, Any]] = []
         self.last_discovery_profile = _profile_summary(_defaults_snapshot())
@@ -251,20 +261,30 @@ class DashboardState:
             self.drive_uploads = uploads + self.drive_uploads
             self.drive_uploads = self.drive_uploads[:12]
 
+    def reset_view_state(self) -> None:
+        with self.lock:
+            self.logs = []
+            self.job_history = []
+            self.drive_uploads = []
+            self.current_job = None
+            self.current_stop_event = None
+
     def run_job(
         self,
         name: str,
-        target: Callable[[], dict[str, Any]],
+        target: Callable[[threading.Event], dict[str, Any]],
         meta: dict[str, Any] | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         with self.lock:
             if self.current_job and self.current_job.get("status") == "running":
                 return False, dict(self.current_job)
 
+            stop_event = threading.Event()
             job = {
                 "id": str(uuid.uuid4())[:8],
                 "name": name,
                 "status": "running",
+                "stop_requested": False,
                 "meta": meta or {},
                 "started_at": _now(),
                 "ended_at": "",
@@ -272,14 +292,19 @@ class DashboardState:
                 "error": "",
             }
             self.current_job = job
+            self.current_stop_event = stop_event
 
         def runner() -> None:
             self.log("job", f"{name} started")
             try:
-                result = target()
+                result = target(stop_event)
                 job["status"] = "completed"
                 job["result"] = result
                 self.log("job", f"{name} completed")
+            except AgentStoppedError as exc:
+                job["status"] = "cancelled"
+                job["error"] = str(exc)
+                self.log("warning", f"{name} stopped")
             except Exception as exc:
                 job["status"] = "failed"
                 job["error"] = str(exc)
@@ -288,10 +313,23 @@ class DashboardState:
                 job["ended_at"] = _now()
                 with self.lock:
                     self.current_job = None
+                    self.current_stop_event = None
                     self.job_history.insert(0, dict(job))
                     self.job_history = self.job_history[:12]
 
         threading.Thread(target=runner, daemon=True).start()
+        return True, job
+
+    def request_stop(self) -> tuple[bool, dict[str, Any] | None]:
+        with self.lock:
+            if not self.current_job or self.current_job.get("status") != "running":
+                return False, None
+            if self.current_stop_event is not None:
+                self.current_stop_event.set()
+            self.current_job["stop_requested"] = True
+            job = dict(self.current_job)
+
+        self.log("warning", f"Stop requested for {job['name']}.")
         return True, job
 
     def snapshot(self) -> dict[str, Any]:
@@ -361,6 +399,7 @@ class DashboardState:
             ],
             "files": {
                 "call_sheet": _file_meta(Path(get_call_sheet_path())),
+                "leads_excel": _file_meta(Path(get_leads_excel_path())),
                 "scraper_results": _file_meta(Path(get_scraper_results_path())),
                 "scraper_batches": [_file_meta(path) for path in _scraper_output_files()[:6]],
                 "proposals": _recent_files(Path(get_proposal_output_dir())),
@@ -405,11 +444,141 @@ def _recent_files(directory: Path) -> list[dict[str, Any]]:
     return [_file_meta(file) for file in files[:10]]
 
 
+def _reset_runtime_outputs() -> dict[str, Any]:
+    if state.current_job:
+        raise RuntimeError("Stop the current job before resetting the workspace.")
+
+    removed = 0
+    for path in _scraper_output_files():
+        if path.exists():
+            path.unlink(missing_ok=True)
+            removed += 1
+
+    for single_path in [
+        Path(get_call_sheet_path()),
+        Path(get_scraper_results_path()),
+        Path(get_leads_excel_path()),
+    ]:
+        if single_path.exists():
+            single_path.unlink(missing_ok=True)
+            removed += 1
+
+    for directory in [Path(get_proposal_output_dir()), Path(get_build_package_output_dir())]:
+        if directory.exists():
+            for item in directory.iterdir():
+                if item.is_file():
+                    item.unlink(missing_ok=True)
+                    removed += 1
+
+    save_leads([])
+    state.reset_view_state()
+    state.log("info", "Workspace reset completed.")
+    return {"removed_files": removed, "stored_leads": 0}
+
+
+def _lead_rows() -> list[dict[str, Any]]:
+    return sorted(
+        load_leads(),
+        key=lambda item: (item.get("score", 0), item.get("review_count", 0)),
+        reverse=True,
+    )
+
+
+def _excel_workbook_bytes(leads: list[dict[str, Any]]) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Leads"
+
+    headers = [
+        "Business",
+        "City",
+        "Category",
+        "Phone",
+        "Website Status",
+        "Website",
+        "Rating",
+        "Review Count",
+        "Score",
+        "Status",
+        "Why It Matters",
+        "Matched Queries",
+        "Google Maps Link",
+        "Notes",
+    ]
+    sheet.append(headers)
+
+    header_fill = PatternFill(fill_type="solid", fgColor="12343B")
+    header_font = Font(color="FFFFFF", bold=True)
+
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(vertical="center")
+
+    for lead in leads:
+        sheet.append(
+            [
+                str(lead.get("business_name", "")),
+                str(lead.get("city", "")),
+                str(lead.get("category", "")),
+                str(lead.get("phone", "")),
+                str(lead.get("website_status", "")),
+                str(lead.get("website", "")),
+                float(lead.get("review_rating", 0.0)),
+                int(lead.get("review_count", 0)),
+                int(lead.get("score", 0)),
+                str(lead.get("status", "")),
+                " | ".join(str(item) for item in lead.get("score_reasons", [])),
+                " | ".join(str(item) for item in lead.get("matched_queries", [])),
+                str(lead.get("maps_link", "")),
+                str(lead.get("notes", "")),
+            ]
+        )
+
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+
+    widths = {
+        "A": 30,
+        "B": 18,
+        "C": 18,
+        "D": 18,
+        "E": 18,
+        "F": 28,
+        "G": 10,
+        "H": 12,
+        "I": 10,
+        "J": 18,
+        "K": 44,
+        "L": 34,
+        "M": 36,
+        "N": 28,
+    }
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+
+    payload = BytesIO()
+    workbook.save(payload)
+    payload.seek(0)
+
+    with open(get_leads_excel_path(), "wb") as file:
+        file.write(payload.getvalue())
+    payload.seek(0)
+    return payload
+
+
 state = DashboardState()
 
 
-def _agent(runtime_profile: dict[str, Any] | None = None) -> WebsiteSalesAgent:
-    return WebsiteSalesAgent(logger=state.log, runtime_profile=runtime_profile)
+def _agent(
+    runtime_profile: dict[str, Any] | None = None,
+    stop_event: threading.Event | None = None,
+) -> WebsiteSalesAgent:
+    return WebsiteSalesAgent(
+        logger=state.log,
+        runtime_profile=runtime_profile,
+        stop_requested=stop_event.is_set if stop_event is not None else None,
+    )
 
 
 def _sync_paths(paths: list[str | Path]) -> list[dict[str, Any]]:
@@ -445,10 +614,10 @@ def _sync_paths(paths: list[str | Path]) -> list[dict[str, Any]]:
     return uploads
 
 
-def _discover(runtime_profile: dict[str, Any]) -> dict[str, Any]:
+def _discover(runtime_profile: dict[str, Any], stop_event: threading.Event) -> dict[str, Any]:
     state.set_last_discovery_profile(runtime_profile)
-    leads = _agent(runtime_profile).discover_leads()
-    uploads = _sync_paths(_scraper_output_files()[:3])
+    leads = _agent(runtime_profile, stop_event=stop_event).discover_leads()
+    uploads = _sync_paths([])
     return {
         "stored_leads": len(leads),
         "top_business": leads[0]["business_name"] if leads else "",
@@ -456,31 +625,41 @@ def _discover(runtime_profile: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _generate_briefs(limit: int, status_filter: str) -> dict[str, Any]:
-    paths = _agent().generate_briefs(limit=limit, status_filter=status_filter)
+def _generate_briefs(
+    stop_event: threading.Event, limit: int, status_filter: str
+) -> dict[str, Any]:
+    paths = _agent(stop_event=stop_event).generate_briefs(
+        limit=limit, status_filter=status_filter
+    )
     uploads = _sync_paths(paths)
     return {"generated_files": len(paths), "paths": paths, "uploads": uploads}
 
 
-def _generate_builds(limit: int, status_filter: str) -> dict[str, Any]:
-    paths = _agent().generate_build_packages(limit=limit, status_filter=status_filter)
+def _generate_builds(
+    stop_event: threading.Event, limit: int, status_filter: str
+) -> dict[str, Any]:
+    paths = _agent(stop_event=stop_event).generate_build_packages(
+        limit=limit, status_filter=status_filter
+    )
     uploads = _sync_paths(paths)
     return {"generated_files": len(paths), "paths": paths, "uploads": uploads}
 
 
-def _export_call_sheet() -> dict[str, Any]:
-    path = _agent().export_call_sheet()
+def _export_call_sheet(stop_event: threading.Event) -> dict[str, Any]:
+    path = _agent(stop_event=stop_event).export_call_sheet()
     uploads = _sync_paths([path])
     return {"path": path, "uploads": uploads}
 
 
-def _sync_exports() -> dict[str, Any]:
+def _sync_exports(stop_event: threading.Event) -> dict[str, Any]:
+    if stop_event.is_set():
+        raise AgentStoppedError("Operation stopped by user.")
+
     paths: list[Path] = []
     call_sheet = Path(get_call_sheet_path())
     if call_sheet.exists():
         paths.append(call_sheet)
 
-    paths.extend(_scraper_output_files()[:4])
     paths.extend(Path(item["path"]) for item in _recent_files(Path(get_proposal_output_dir()))[:6])
     paths.extend(
         Path(item["path"]) for item in _recent_files(Path(get_build_package_output_dir()))[:6]
@@ -506,7 +685,7 @@ def api_discover() -> Any:
     profile = _build_discovery_profile(payload)
     started, job = state.run_job(
         "Lead discovery",
-        lambda: _discover(profile),
+        lambda stop_event: _discover(profile, stop_event),
         _profile_summary(profile),
     )
     return jsonify({"started": started, "job": job}), 202 if started else 409
@@ -519,7 +698,9 @@ def api_briefs() -> Any:
     status_filter = str(payload.get("status_filter", "")).strip()
     started, job = state.run_job(
         "Generate proposal briefs",
-        lambda: _generate_briefs(limit=limit, status_filter=status_filter),
+        lambda stop_event: _generate_briefs(
+            stop_event, limit=limit, status_filter=status_filter
+        ),
         {"limit": limit, "status_filter": status_filter},
     )
     return jsonify({"started": started, "job": job}), 202 if started else 409
@@ -532,7 +713,9 @@ def api_builds() -> Any:
     status_filter = str(payload.get("status_filter", "won")).strip() or "won"
     started, job = state.run_job(
         "Generate build packages",
-        lambda: _generate_builds(limit=limit, status_filter=status_filter),
+        lambda stop_event: _generate_builds(
+            stop_event, limit=limit, status_filter=status_filter
+        ),
         {"limit": limit, "status_filter": status_filter},
     )
     return jsonify({"started": started, "job": job}), 202 if started else 409
@@ -548,6 +731,39 @@ def api_export() -> Any:
 def api_sync_exports() -> Any:
     started, job = state.run_job("Sync exports to Google Drive", _sync_exports)
     return jsonify({"started": started, "job": job}), 202 if started else 409
+
+
+@app.post("/api/actions/stop")
+def api_stop() -> Any:
+    stopped, job = state.request_stop()
+    if not stopped:
+        return jsonify({"ok": False, "error": "No running job to stop."}), 409
+    return jsonify({"ok": True, "job": job})
+
+
+@app.post("/api/actions/reset")
+def api_reset() -> Any:
+    try:
+        result = _reset_runtime_outputs()
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 409
+    return jsonify({"ok": True, "result": result})
+
+
+@app.get("/api/exports/leads.xlsx")
+def api_export_leads_excel() -> Any:
+    leads = _lead_rows()
+    if not leads:
+        return jsonify({"ok": False, "error": "No leads available to export."}), 404
+
+    payload = _excel_workbook_bytes(leads)
+    filename = f"website-leads-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"
+    return send_file(
+        payload,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.post("/api/leads/<lead_id>/status")

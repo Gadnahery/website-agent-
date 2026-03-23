@@ -3,57 +3,44 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tanzania Website Agent</title>
+  <title>Website Agent Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
 </head>
 <body>
   <main class="app-shell">
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="hero-kicker">Website Sales Agent</p>
-        <h1>Find the right local businesses, watch the agent think, and ship every output to one place.</h1>
-        <p class="hero-text">
-          Search by city, neighborhood, or raw business query. Keep the no-website filter on, generate briefs, export the call sheet, and sync results to Google Drive from a dashboard that works on desktop and phone.
+    <section class="masthead">
+      <div class="masthead-copy">
+        <p class="eyebrow">Website Lead Agent</p>
+        <h1>Scrape local businesses, see results live, and stay in control.</h1>
+        <p class="subcopy">
+          Enter a location and business type, watch the agent work in real time, stop it when needed,
+          reset the workspace, and export the final lead list to Excel when you are ready.
         </p>
-        <div class="hero-badges">
-          <span class="badge">Live scrape control</span>
-          <span class="badge">Phone-friendly</span>
-          <span class="badge">Drive-ready</span>
+        <div class="live-row">
+          <span class="live-pill">Live dashboard</span>
+          <span class="live-pill soft" id="generated-at">Loading state...</span>
         </div>
       </div>
-      <div class="hero-side">
-        <div class="pulse-card">
-          <div class="pulse-dot"></div>
-          <div>
-            <strong>Agent Console</strong>
-            <p id="generated-at">Refreshing state...</p>
-          </div>
-        </div>
-        <div id="job-card" class="job-card empty">No job running yet.</div>
+
+      <div class="masthead-actions">
+        <button type="button" class="primary" data-action="discover">Run Scrape</button>
+        <button type="button" class="secondary" data-action="stop">Stop Agent</button>
+        <button type="button" class="ghost" data-action="refresh">Refresh</button>
+        <button type="button" class="ghost" data-action="reset">Reset Workspace</button>
+        <button type="button" class="accent" data-action="excel">Export Excel</button>
       </div>
     </section>
 
     <section id="metrics-grid" class="metrics-grid"></section>
 
-    <section class="control-grid">
-      <article class="panel control-panel">
+    <section class="top-grid">
+      <article class="panel command-panel">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Search Brief</p>
-            <h2>Tell the agent what to scrape</h2>
+            <p class="panel-kicker">Search Setup</p>
+            <h2>Tell the agent what to look for</h2>
           </div>
-          <span class="panel-tag">runtime inputs</span>
-        </div>
-
-        <div class="field-grid">
-          <label class="field">
-            <span>Country</span>
-            <input id="country" type="text" placeholder="Tanzania">
-          </label>
-          <label class="field">
-            <span>Language</span>
-            <input id="scraper-lang" type="text" placeholder="en">
-          </label>
+          <span class="panel-tag">scrape command</span>
         </div>
 
         <div class="preset-strip">
@@ -61,33 +48,34 @@
           <div id="preset-buttons" class="preset-buttons"></div>
         </div>
 
-        <div class="field-grid field-grid-lg">
+        <div class="field-grid">
           <label class="field">
-            <span>Locations</span>
-            <textarea id="locations" rows="5" placeholder="Dar es Salaam&#10;Arusha&#10;Mwanza"></textarea>
+            <span>Location</span>
+            <textarea id="locations" rows="4" placeholder="Dar es Salaam&#10;Arusha&#10;Mikocheni, Dar es Salaam"></textarea>
             <small>One per line or comma separated.</small>
           </label>
+
           <label class="field">
-            <span>Business types</span>
-            <textarea id="business-types" rows="5" placeholder="salon&#10;event hall&#10;restaurant"></textarea>
-            <small>Examples: salons, halls, clinics, lodges.</small>
+            <span>Business type</span>
+            <textarea id="business-types" rows="4" placeholder="salon&#10;event hall&#10;clinic"></textarea>
+            <small>You can enter one type or a list.</small>
           </label>
         </div>
 
         <label class="field">
-          <span>Direct queries</span>
-          <textarea id="target-queries" rows="4" placeholder="salons in Mikocheni, Dar es Salaam&#10;conference halls in Arusha"></textarea>
-          <small>Optional. If filled, these run directly instead of cross-combining city and business type.</small>
+          <span>Direct search queries</span>
+          <textarea id="target-queries" rows="3" placeholder="salons in Mikocheni, Dar es Salaam&#10;halls in Kariakoo, Dar es Salaam"></textarea>
+          <small>Optional. Use this if you want to control the exact search phrase.</small>
         </label>
 
-        <div class="field-grid field-grid-compact">
+        <div class="inline-grid">
           <label class="field">
-            <span>Min reviews</span>
-            <input id="minimum-review-count" type="number" min="0">
+            <span>Country</span>
+            <input id="country" type="text" placeholder="Tanzania">
           </label>
           <label class="field">
-            <span>Min rating</span>
-            <input id="minimum-rating" type="number" min="0" max="5" step="0.1">
+            <span>Language</span>
+            <input id="scraper-lang" type="text" placeholder="en">
           </label>
           <label class="field">
             <span>Depth</span>
@@ -97,97 +85,130 @@
             <span>Concurrency</span>
             <input id="scraper-concurrency" type="number" min="1">
           </label>
-          <label class="field">
-            <span>Radius (m)</span>
-            <input id="scraper-radius" type="number" min="1000" step="500">
-          </label>
         </div>
 
-        <div class="toggle-row">
-          <label class="toggle">
-            <input id="must-have-phone" type="checkbox">
-            <span>Only keep leads with phone numbers</span>
-          </label>
-          <label class="toggle">
-            <input id="require-missing-website" type="checkbox">
-            <span>Only keep businesses missing a proper website</span>
-          </label>
-          <label class="toggle">
-            <input id="scraper-fast-mode" type="checkbox">
-            <span>Use fast scrape mode</span>
-          </label>
-        </div>
+        <details class="advanced">
+          <summary>Advanced filters</summary>
+          <div class="advanced-grid">
+            <label class="field">
+              <span>Min reviews</span>
+              <input id="minimum-review-count" type="number" min="0">
+            </label>
+            <label class="field">
+              <span>Min rating</span>
+              <input id="minimum-rating" type="number" min="0" max="5" step="0.1">
+            </label>
+            <label class="field">
+              <span>Radius (m)</span>
+              <input id="scraper-radius" type="number" min="1000" step="500">
+            </label>
+          </div>
 
-        <div class="action-row">
-          <button data-action="discover" class="primary">Run Discovery</button>
-          <button data-action="export" class="secondary">Export Call Sheet</button>
-          <button data-action="sync" class="ghost">Sync To Drive</button>
-        </div>
-
-        <div class="action-row split">
-          <label class="field inline-field">
-            <span>Brief limit</span>
-            <input id="brief-limit" type="number" min="1" value="10">
-          </label>
-          <label class="field inline-field">
-            <span>Status</span>
-            <input id="brief-status" type="text" placeholder="blank = all">
-          </label>
-          <button data-action="briefs" class="secondary">Generate Briefs</button>
-        </div>
-
-        <div class="action-row split">
-          <label class="field inline-field">
-            <span>Build limit</span>
-            <input id="build-limit" type="number" min="1" value="10">
-          </label>
-          <label class="field inline-field">
-            <span>Status</span>
-            <input id="build-status" type="text" value="won">
-          </label>
-          <button data-action="builds" class="ghost">Generate Builds</button>
-        </div>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input id="must-have-phone" type="checkbox">
+              <span>Require phone number</span>
+            </label>
+            <label class="toggle">
+              <input id="require-missing-website" type="checkbox">
+              <span>Only missing or weak websites</span>
+            </label>
+            <label class="toggle">
+              <input id="scraper-fast-mode" type="checkbox">
+              <span>Use fast mode</span>
+            </label>
+          </div>
+        </details>
 
         <p id="flash" class="flash"></p>
       </article>
 
       <article class="stack-column">
-        <section class="panel brief-panel">
+        <section class="panel">
           <div class="panel-head">
             <div>
-              <p class="panel-kicker">Current Search</p>
-              <h2>Agent plan</h2>
+              <p class="panel-kicker">Mission</p>
+              <h2>Current run</h2>
             </div>
-            <span class="panel-tag">query brief</span>
+            <span class="panel-tag">live</span>
+          </div>
+          <div id="job-card" class="job-card empty">No job running yet.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Search Brief</p>
+              <h2>Run summary</h2>
+            </div>
+            <span class="panel-tag">active scope</span>
           </div>
           <div id="search-brief" class="brief-content"></div>
         </section>
 
-        <section class="panel drive-panel">
+        <section class="panel">
           <div class="panel-head">
             <div>
-              <p class="panel-kicker">Storage</p>
-              <h2>Google Drive</h2>
+              <p class="panel-kicker">Drive</p>
+              <h2>Cloud sync</h2>
             </div>
-            <span class="panel-tag">exports</span>
+            <span class="panel-tag">optional</span>
           </div>
           <div id="drive-status" class="drive-status"></div>
-          <div>
-            <h3>Recent Uploads</h3>
-            <div id="drive-uploads" class="stack-list"></div>
+          <div class="panel-actions">
+            <button type="button" class="ghost" data-action="sync">Sync recent outputs</button>
           </div>
         </section>
       </article>
     </section>
 
-    <section class="stream-grid">
+    <section class="panel results-panel">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Results</p>
+          <h2>Lead board</h2>
+        </div>
+        <span class="panel-tag">live output</span>
+      </div>
+
+      <div class="results-toolbar">
+        <label class="field search-field">
+          <span>Search leads</span>
+          <input id="lead-search" type="text" placeholder="Search by business, city, phone, or type">
+        </label>
+        <div class="results-summary" id="results-summary"></div>
+      </div>
+
+      <div id="lead-spotlight" class="lead-spotlight"></div>
+
+      <div class="table-shell">
+        <table class="lead-table">
+          <thead>
+            <tr>
+              <th>Business</th>
+              <th>City</th>
+              <th>Type</th>
+              <th>Phone</th>
+              <th>Website</th>
+              <th>Rating</th>
+              <th>Score</th>
+              <th>Status</th>
+              <th>Map</th>
+            </tr>
+          </thead>
+          <tbody id="lead-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="activity-grid">
       <article class="panel">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Live Activity</p>
-            <h2>Agent console</h2>
+            <p class="panel-kicker">Console</p>
+            <h2>Agent activity</h2>
           </div>
-          <span class="panel-tag">refresh every 3s</span>
+          <span class="panel-tag">auto refresh</span>
         </div>
         <div id="logs" class="log-console"></div>
       </article>
@@ -195,78 +216,13 @@
       <article class="panel">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Recent Runs</p>
-            <h2>Job history</h2>
+            <p class="panel-kicker">History</p>
+            <h2>Recent runs</h2>
           </div>
-          <span class="panel-tag">background jobs</span>
+          <span class="panel-tag">last jobs</span>
         </div>
         <div id="job-history" class="history-list"></div>
       </article>
-    </section>
-
-    <section class="insight-grid">
-      <article class="panel">
-        <div class="panel-head">
-          <div>
-            <p class="panel-kicker">Pipeline</p>
-            <h2>Status and city mix</h2>
-          </div>
-          <span class="panel-tag">top segments</span>
-        </div>
-        <div class="mini-columns">
-          <div>
-            <h3>Status counts</h3>
-            <div id="status-counts" class="stack-list"></div>
-          </div>
-          <div>
-            <h3>Top cities</h3>
-            <div id="city-counts" class="stack-list"></div>
-          </div>
-        </div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-head">
-          <div>
-            <p class="panel-kicker">Outputs</p>
-            <h2>Generated files</h2>
-          </div>
-          <span class="panel-tag">local + sync</span>
-        </div>
-        <div class="file-grid">
-          <div>
-            <h3>Call sheet</h3>
-            <div id="call-sheet" class="file-card"></div>
-          </div>
-          <div>
-            <h3>Latest scraper file</h3>
-            <div id="scraper-results" class="file-card"></div>
-          </div>
-          <div>
-            <h3>Batch result files</h3>
-            <div id="scraper-batches" class="stack-list"></div>
-          </div>
-          <div>
-            <h3>Recent proposals</h3>
-            <div id="proposal-files" class="stack-list"></div>
-          </div>
-          <div>
-            <h3>Recent build packages</h3>
-            <div id="build-files" class="stack-list"></div>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <section class="panel leads-panel">
-      <div class="panel-head">
-        <div>
-          <p class="panel-kicker">Lead Board</p>
-          <h2>Saved prospects</h2>
-        </div>
-        <span class="panel-tag">top 60 by score</span>
-      </div>
-      <div id="leads-grid" class="lead-grid"></div>
     </section>
   </main>
 
@@ -274,6 +230,7 @@
     const leadStatuses = [];
     let searchPresets = [];
     let formHydrated = false;
+    let latestState = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -286,8 +243,8 @@
 
     function setFlash(message, isError = false) {
       const flash = document.getElementById("flash");
-      flash.textContent = message;
-      flash.classList.toggle("error", isError);
+      flash.textContent = message || "";
+      flash.classList.toggle("error", Boolean(isError));
     }
 
     async function postJson(url, payload = {}) {
@@ -303,7 +260,7 @@
       return data;
     }
 
-    function renderList(containerId, entries, formatter, emptyMessage = "Nothing yet.") {
+    function renderList(containerId, entries, formatter, emptyMessage = "Nothing to show.") {
       const container = document.getElementById(containerId);
       if (!entries || !entries.length) {
         container.innerHTML = `<div class="empty-list">${escapeHtml(emptyMessage)}</div>`;
@@ -316,10 +273,8 @@
       const cards = [
         ["Total leads", metrics.total_leads],
         ["Fresh leads", metrics.new_leads],
-        ["Proposal ready", metrics.proposal_ready],
-        ["Won", metrics.won],
+        ["High score", metrics.high_score],
         ["Avg score", metrics.avg_score],
-        ["80+ score", metrics.high_score],
         ["Missing website", metrics.missing_website],
         ["Weak website", (metrics.social_only || 0) + (metrics.marketplace_only || 0) + (metrics.website_builder_only || 0)],
       ];
@@ -327,7 +282,7 @@
       document.getElementById("metrics-grid").innerHTML = cards.map(([label, value]) => `
         <article class="metric-card">
           <span>${escapeHtml(label)}</span>
-          <strong>${escapeHtml(value)}</strong>
+          <strong>${escapeHtml(value ?? 0)}</strong>
         </article>
       `).join("");
     }
@@ -335,13 +290,23 @@
     function renderJob(job, history) {
       const card = document.getElementById("job-card");
       if (job) {
-        card.className = `job-card ${job.status}`;
+        card.className = `job-card ${job.stop_requested ? "stopping" : job.status}`;
         card.innerHTML = `
-          <h3>${escapeHtml(job.name)}</h3>
-          <p><strong>Status</strong> ${escapeHtml(job.status)}</p>
-          <p><strong>Started</strong> ${escapeHtml(job.started_at)}</p>
-          ${job.meta && Object.keys(job.meta).length ? `<p><strong>Scope</strong> ${escapeHtml(JSON.stringify(job.meta))}</p>` : ""}
-          ${job.error ? `<p class="job-error">${escapeHtml(job.error)}</p>` : ""}
+          <div class="job-status-row">
+            <strong>${escapeHtml(job.name)}</strong>
+            <span class="status-badge ${escapeHtml(job.stop_requested ? "stopping" : job.status)}">${escapeHtml(job.stop_requested ? "stopping" : job.status)}</span>
+          </div>
+          <div class="job-meta-grid">
+            <div class="brief-item">
+              <span>Started</span>
+              <strong>${escapeHtml(job.started_at)}</strong>
+            </div>
+            <div class="brief-item">
+              <span>Scope</span>
+              <strong>${escapeHtml(job.meta?.query_count_estimate ?? "-")} queries</strong>
+            </div>
+          </div>
+          ${job.error ? `<p class="job-error">${escapeHtml(job.error)}</p>` : `<p class="job-helper">${escapeHtml(job.stop_requested ? "Waiting for the running task to stop safely." : "The agent is actively processing this request.")}</p>`}
         `;
         return;
       }
@@ -350,17 +315,28 @@
         const latest = history[0];
         card.className = `job-card ${latest.status}`;
         card.innerHTML = `
-          <h3>${escapeHtml(latest.name)}</h3>
-          <p><strong>Last status</strong> ${escapeHtml(latest.status)}</p>
-          <p><strong>Started</strong> ${escapeHtml(latest.started_at)}</p>
-          <p><strong>Ended</strong> ${escapeHtml(latest.ended_at || "-")}</p>
+          <div class="job-status-row">
+            <strong>${escapeHtml(latest.name)}</strong>
+            <span class="status-badge ${escapeHtml(latest.status)}">${escapeHtml(latest.status)}</span>
+          </div>
+          <div class="job-meta-grid">
+            <div class="brief-item">
+              <span>Started</span>
+              <strong>${escapeHtml(latest.started_at)}</strong>
+            </div>
+            <div class="brief-item">
+              <span>Ended</span>
+              <strong>${escapeHtml(latest.ended_at || "-")}</strong>
+            </div>
+          </div>
+          ${latest.result ? `<p class="job-helper">Saved ${escapeHtml(latest.result.stored_leads ?? latest.result.generated_files ?? 0)} items${latest.result.top_business ? `, top result: ${escapeHtml(latest.result.top_business)}` : ""}.</p>` : ""}
           ${latest.error ? `<p class="job-error">${escapeHtml(latest.error)}</p>` : ""}
         `;
         return;
       }
 
       card.className = "job-card empty";
-      card.textContent = "No job running yet.";
+      card.innerHTML = `<p class="job-helper">No job running yet.</p>`;
     }
 
     function renderHistory(history) {
@@ -372,7 +348,7 @@
           </div>
           <span>${escapeHtml(job.status)}</span>
         </div>
-      `);
+      `, "No runs yet.");
     }
 
     function renderLogs(logs) {
@@ -382,7 +358,7 @@
         return;
       }
 
-      panel.innerHTML = logs.slice(-140).map((entry) => `
+      panel.innerHTML = logs.slice(-120).map((entry) => `
         <div class="log-line ${escapeHtml(entry.level)}">
           <span>${escapeHtml(entry.timestamp)}</span>
           <strong>${escapeHtml(entry.level)}</strong>
@@ -390,59 +366,6 @@
         </div>
       `).join("");
       panel.scrollTop = panel.scrollHeight;
-    }
-
-    function renderCounts(statusCounts, cityCounts) {
-      renderList("status-counts", Object.entries(statusCounts || {}), ([name, count]) => `
-        <div class="stack-item">
-          <span>${escapeHtml(name)}</span>
-          <strong>${escapeHtml(count)}</strong>
-        </div>
-      `);
-
-      renderList("city-counts", cityCounts || [], ([name, count]) => `
-        <div class="stack-item">
-          <span>${escapeHtml(name)}</span>
-          <strong>${escapeHtml(count)}</strong>
-        </div>
-      `);
-    }
-
-    function formatFileCard(file) {
-      if (!file || !file.exists) {
-        return `<div class="empty-list">Not generated yet.</div>`;
-      }
-      return `
-        <div class="file-name">${escapeHtml(file.name || file.path)}</div>
-        <div class="file-meta">${escapeHtml(file.path)}</div>
-        <div class="file-submeta">Updated ${escapeHtml(file.modified_at)} | ${escapeHtml(file.size)} bytes</div>
-      `;
-    }
-
-    function renderFiles(files) {
-      document.getElementById("call-sheet").innerHTML = formatFileCard(files.call_sheet);
-      document.getElementById("scraper-results").innerHTML = formatFileCard(files.scraper_results);
-
-      renderList("scraper-batches", files.scraper_batches || [], (file) => `
-        <div class="stack-item stack-file">
-          <span>${escapeHtml(file.name || file.path)}</span>
-          <small>${escapeHtml(file.modified_at || "")}</small>
-        </div>
-      `, "No batch exports yet.");
-
-      renderList("proposal-files", files.proposals || [], (file) => `
-        <div class="stack-item stack-file">
-          <span>${escapeHtml(file.name || file.path)}</span>
-          <small>${escapeHtml(file.modified_at || "")}</small>
-        </div>
-      `);
-
-      renderList("build-files", files.build_packages || [], (file) => `
-        <div class="stack-item stack-file">
-          <span>${escapeHtml(file.name || file.path)}</span>
-          <small>${escapeHtml(file.modified_at || "")}</small>
-        </div>
-      `);
     }
 
     function statusSelect(lead) {
@@ -455,34 +378,84 @@
       `;
     }
 
-    function renderLeads(leads) {
-      renderList("leads-grid", leads || [], (lead) => `
-        <article class="lead-card">
-          <div class="lead-top">
+    function leadCard(lead) {
+      return `
+        <article class="spotlight-card">
+          <div class="spotlight-head">
             <div>
               <h3>${escapeHtml(lead.business_name)}</h3>
               <p>${escapeHtml(lead.category || "Business")} in ${escapeHtml(lead.city || "Unknown city")}</p>
             </div>
             <div class="score-pill">${escapeHtml(lead.score)}</div>
           </div>
-          <div class="lead-stats">
+          <div class="lead-tags">
             <span>${escapeHtml(lead.website_status)}</span>
             <span>${escapeHtml(lead.review_rating)} rating</span>
             <span>${escapeHtml(lead.review_count)} reviews</span>
           </div>
-          <div class="lead-notes">${escapeHtml((lead.score_reasons || []).join(" | "))}</div>
-          <div class="lead-notes">${escapeHtml(lead.duplicate_count > 1 ? `Merged ${lead.duplicate_count} duplicate rows` : "Single-source lead")}</div>
-          <div class="lead-notes">${escapeHtml((lead.matched_queries || []).slice(0, 2).join(" | "))}</div>
-          <div class="lead-links">
+          <div class="spotlight-body">${escapeHtml((lead.score_reasons || []).join(" | ") || "Lead scored from available business signals.")}</div>
+          <div class="spotlight-foot">
             <span>${escapeHtml(lead.phone || "No phone")}</span>
             ${lead.maps_link ? `<a href="${escapeHtml(lead.maps_link)}" target="_blank" rel="noreferrer">Open Maps</a>` : `<span>No map link</span>`}
           </div>
-          <div class="lead-actions">
-            ${statusSelect(lead)}
-            <button class="tiny-button" onclick="updateLeadStatus('${escapeHtml(lead.id)}')">Save Status</button>
-          </div>
         </article>
-      `, "No saved leads yet.");
+      `;
+    }
+
+    function filteredLeads() {
+      const leads = latestState?.leads || [];
+      const term = document.getElementById("lead-search").value.trim().toLowerCase();
+      if (!term) {
+        return leads;
+      }
+      return leads.filter((lead) => {
+        const haystack = [
+          lead.business_name,
+          lead.city,
+          lead.category,
+          lead.phone,
+          lead.website_status,
+          ...(lead.matched_queries || []),
+        ].join(" ").toLowerCase();
+        return haystack.includes(term);
+      });
+    }
+
+    function renderLeads(leads) {
+      const spotlight = document.getElementById("lead-spotlight");
+      const tableBody = document.getElementById("lead-table-body");
+      const summary = document.getElementById("results-summary");
+
+      if (!leads.length) {
+        spotlight.innerHTML = `<div class="empty-list">No leads yet. Run a scrape to populate the board.</div>`;
+        tableBody.innerHTML = `<tr><td colspan="9" class="table-empty">No leads to display.</td></tr>`;
+        summary.textContent = "0 visible leads";
+        return;
+      }
+
+      summary.textContent = `${leads.length} visible lead${leads.length === 1 ? "" : "s"}`;
+      spotlight.innerHTML = leads.slice(0, 4).map(leadCard).join("");
+      tableBody.innerHTML = leads.map((lead) => `
+        <tr>
+          <td>
+            <div class="table-business">${escapeHtml(lead.business_name)}</div>
+            <div class="table-meta">${escapeHtml((lead.score_reasons || []).slice(0, 2).join(" | "))}</div>
+          </td>
+          <td>${escapeHtml(lead.city || "-")}</td>
+          <td>${escapeHtml(lead.category || "-")}</td>
+          <td>${escapeHtml(lead.phone || "-")}</td>
+          <td><span class="table-status">${escapeHtml(lead.website_status || "-")}</span></td>
+          <td>${escapeHtml(lead.review_rating)} / ${escapeHtml(lead.review_count)}</td>
+          <td><strong>${escapeHtml(lead.score)}</strong></td>
+          <td>
+            <div class="status-editor">
+              ${statusSelect(lead)}
+              <button type="button" class="tiny-button" onclick="updateLeadStatus('${escapeHtml(lead.id)}')">Save</button>
+            </div>
+          </td>
+          <td>${lead.maps_link ? `<a href="${escapeHtml(lead.maps_link)}" target="_blank" rel="noreferrer">Open</a>` : "-"}</td>
+        </tr>
+      `).join("");
     }
 
     function applyPreset(preset) {
@@ -499,7 +472,7 @@
       searchPresets = presets || [];
       renderList("preset-buttons", searchPresets, (preset, index) => `
         <button type="button" class="preset-button" data-preset-index="${index}">${escapeHtml(preset.name)}</button>
-      `, "No presets yet.");
+      `, "No presets configured.");
     }
 
     function hydrateForm(defaults, lastProfile) {
@@ -529,20 +502,16 @@
       const queries = profile.target_queries || [];
       document.getElementById("search-brief").innerHTML = `
         <div class="brief-item">
-          <span>Country</span>
-          <strong>${escapeHtml(profile.country || "Tanzania")}</strong>
-        </div>
-        <div class="brief-item">
           <span>Locations</span>
-          <strong>${escapeHtml(cities.length ? cities.join(", ") : "Using configured defaults")}</strong>
+          <strong>${escapeHtml(cities.length ? cities.join(", ") : "Using defaults")}</strong>
         </div>
         <div class="brief-item">
           <span>Business types</span>
-          <strong>${escapeHtml(niches.length ? niches.join(", ") : "Using configured defaults")}</strong>
+          <strong>${escapeHtml(niches.length ? niches.join(", ") : "Using defaults")}</strong>
         </div>
         <div class="brief-item">
           <span>Direct queries</span>
-          <strong>${escapeHtml(queries.length ? `${queries.length} custom queries` : "None")}</strong>
+          <strong>${escapeHtml(queries.length ? `${queries.length} custom search terms` : "None")}</strong>
         </div>
         <div class="brief-item">
           <span>Estimated query count</span>
@@ -552,19 +521,8 @@
           <span>Filters</span>
           <strong>${escapeHtml([
             profile.must_have_phone ? "phone required" : "phone optional",
-            profile.require_missing_website ? "missing website only" : "all website states",
-            `min ${profile.minimum_review_count || 0} reviews`,
-            `min ${profile.minimum_rating || 0} rating`
-          ].join(" | "))}</strong>
-        </div>
-        <div class="brief-item">
-          <span>Scraper mode</span>
-          <strong>${escapeHtml([
-            profile.scraper_fast_mode ? "fast" : "standard",
-            `depth ${profile.scraper_depth || 1}`,
-            `concurrency ${profile.scraper_concurrency || 1}`,
-            `radius ${profile.scraper_radius || 0}m`,
-            profile.scraper_lang || "en"
+            profile.require_missing_website ? "website opportunity only" : "all websites",
+            profile.scraper_fast_mode ? "fast mode" : "standard mode"
           ].join(" | "))}</strong>
         </div>
       `;
@@ -579,24 +537,10 @@
           <strong>${escapeHtml(drive.enabled ? (drive.ready ? "Connected" : "Needs setup") : "Disabled")}</strong>
         </div>
         <div class="brief-item">
-          <span>Folder</span>
-          <strong>${escapeHtml(drive.folder_id || "Not configured")}</strong>
-        </div>
-        <div class="brief-item">
           <span>Message</span>
           <strong>${escapeHtml(drive.message || "")}</strong>
         </div>
       `;
-
-      renderList("drive-uploads", drive.recent_uploads || [], (file) => `
-        <div class="stack-item stack-file">
-          <div>
-            <span>${escapeHtml(file.name || "Drive file")}</span>
-            <small>${escapeHtml(file.path || "")}</small>
-          </div>
-          ${file.web_view_link ? `<a href="${escapeHtml(file.web_view_link)}" target="_blank" rel="noreferrer">Open</a>` : `<small>Uploaded</small>`}
-        </div>
-      `, "No synced files yet.");
     }
 
     function discoveryPayload() {
@@ -635,9 +579,16 @@
         return;
       }
 
-      if (action === "export") {
-        await postJson("/api/actions/export-call-sheet");
-        setFlash("Call sheet export started.");
+      if (action === "stop") {
+        await postJson("/api/actions/stop");
+        setFlash("Stop request sent to the running job.");
+        return;
+      }
+
+      if (action === "reset") {
+        await postJson("/api/actions/reset");
+        formHydrated = false;
+        setFlash("Workspace reset.");
         return;
       }
 
@@ -647,30 +598,34 @@
         return;
       }
 
-      if (action === "briefs") {
-        await postJson("/api/actions/briefs", {
-          limit: document.getElementById("brief-limit").value,
-          status_filter: document.getElementById("brief-status").value,
-        });
-        setFlash("Proposal generation started.");
+      if (action === "refresh") {
+        await refresh();
+        setFlash("Dashboard refreshed.");
         return;
       }
 
-      if (action === "builds") {
-        await postJson("/api/actions/build-packages", {
-          limit: document.getElementById("build-limit").value,
-          status_filter: document.getElementById("build-status").value,
-        });
-        setFlash("Build package generation started.");
+      if (action === "excel") {
+        window.location.href = `/api/exports/leads.xlsx?ts=${Date.now()}`;
+        setFlash("Excel export started.");
       }
+    }
+
+    function updateActionState(job) {
+      const running = Boolean(job && job.status === "running");
+      document.querySelectorAll('[data-action="discover"]').forEach((button) => {
+        button.disabled = running;
+      });
+      document.querySelectorAll('[data-action="stop"]').forEach((button) => {
+        button.disabled = !running;
+      });
     }
 
     async function refresh() {
       const response = await fetch("/api/state");
       const data = await response.json();
+      latestState = data;
 
       leadStatuses.splice(0, leadStatuses.length, ...(data.lead_statuses || []));
-
       document.getElementById("generated-at").textContent = `Updated ${data.generated_at}`;
       hydrateForm(data.search_defaults || {}, data.last_discovery_profile || {});
       renderMetrics(data.metrics || {});
@@ -680,9 +635,8 @@
       renderSearchBrief(data.last_discovery_profile || {});
       renderDrive(data.drive || {});
       renderLogs(data.logs || []);
-      renderCounts(data.status_counts || {}, data.city_counts || []);
-      renderLeads(data.leads || []);
-      renderFiles(data.files || {});
+      renderLeads(filteredLeads());
+      updateActionState(data.job);
     }
 
     document.querySelectorAll("[data-action]").forEach((button) => {
@@ -701,16 +655,18 @@
       if (!triggerButton) {
         return;
       }
-
-      const index = Number(triggerButton.dataset.presetIndex);
-      const preset = searchPresets[index];
+      const preset = searchPresets[Number(triggerButton.dataset.presetIndex)];
       if (preset) {
         applyPreset(preset);
       }
     });
 
+    document.getElementById("lead-search").addEventListener("input", () => {
+      renderLeads(filteredLeads());
+    });
+
     refresh();
-    setInterval(refresh, 3000);
+    setInterval(refresh, 4000);
   </script>
 </body>
 </html>

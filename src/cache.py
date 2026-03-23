@@ -25,6 +25,10 @@ def get_call_sheet_path() -> str:
     return os.path.join(get_cache_path(), "call_sheet.csv")
 
 
+def get_leads_excel_path() -> str:
+    return os.path.join(get_cache_path(), "website_leads.xlsx")
+
+
 def _initial_payload() -> dict[str, Any]:
     return {"leads": []}
 

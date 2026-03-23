@@ -3,8 +3,11 @@ import glob
 import hashlib
 import os
 import platform
+import queue
 import re
 import subprocess
+import threading
+import time
 import zipfile
 from io import BytesIO
 from typing import Callable
@@ -129,11 +132,16 @@ CITY_PRIORITY_BONUSES = {
 }
 
 
+class AgentStoppedError(RuntimeError):
+    pass
+
+
 class WebsiteSalesAgent:
     def __init__(
         self,
         logger: Callable[[str, str], None] | None = None,
         runtime_profile: dict[str, object] | None = None,
+        stop_requested: Callable[[], bool] | None = None,
     ) -> None:
         profile = runtime_profile or {}
         self.country = self._profile_text(profile, "country", get_country())
@@ -172,6 +180,7 @@ class WebsiteSalesAgent:
         )
         self.verbose = get_verbose()
         self.logger = logger
+        self.stop_requested = stop_requested
         self._scraper_flags: set[str] | None = None
 
     def _scraper_source_marker_path(self) -> str:
@@ -306,13 +315,27 @@ class WebsiteSalesAgent:
     def _warning(self, message: str, show_marker: bool = True) -> None:
         self._emit("warning", message, show_marker)
 
+    def _is_stop_requested(self) -> bool:
+        if self.stop_requested is None:
+            return False
+        try:
+            return bool(self.stop_requested())
+        except Exception:
+            return False
+
+    def _check_stop(self) -> None:
+        if self._is_stop_requested():
+            raise AgentStoppedError("Operation stopped by user.")
+
     def _run_command(
         self,
         command: list[str],
         cwd: str | None = None,
         timeout: int | None = None,
     ) -> None:
-        if self.logger is None:
+        self._check_stop()
+
+        if self.logger is None and self.stop_requested is None:
             subprocess.run(command, cwd=cwd, check=True, timeout=timeout)
             return
 
@@ -324,19 +347,57 @@ class WebsiteSalesAgent:
             text=True,
             encoding="utf-8",
             errors="replace",
+            bufsize=1,
         )
 
-        try:
+        output_queue: queue.Queue[str | None] = queue.Queue()
+
+        def _reader() -> None:
             assert process.stdout is not None
             for line in process.stdout:
-                cleaned = line.strip()
-                if cleaned:
-                    self.logger("process", cleaned)
-            return_code = process.wait(timeout=timeout)
+                output_queue.put(line)
+            output_queue.put(None)
+
+        reader = threading.Thread(target=_reader, daemon=True)
+        reader.start()
+        started_at = time.time()
+        stream_closed = False
+
+        try:
+            while True:
+                self._check_stop()
+
+                if timeout is not None and time.time() - started_at > timeout:
+                    process.kill()
+                    raise subprocess.TimeoutExpired(command, timeout)
+
+                try:
+                    item = output_queue.get(timeout=0.2)
+                except queue.Empty:
+                    item = "__NO_OUTPUT__"
+
+                if item is None:
+                    stream_closed = True
+                elif item != "__NO_OUTPUT__":
+                    cleaned = str(item).strip()
+                    if cleaned and self.logger is not None:
+                        self.logger("process", cleaned)
+
+                if self._is_stop_requested():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    raise AgentStoppedError("Operation stopped by user.")
+
+                if stream_closed and process.poll() is not None:
+                    break
         except subprocess.TimeoutExpired:
             process.kill()
             raise
 
+        return_code = process.wait(timeout=5)
         if return_code != 0:
             raise subprocess.CalledProcessError(return_code, command)
 
@@ -948,6 +1009,7 @@ class WebsiteSalesAgent:
         return True
 
     def discover_leads(self) -> list[dict[str, object]]:
+        self._check_stop()
         queries = self.build_queries()
         if not queries:
             raise RuntimeError("No target queries could be built from config.json")
@@ -958,6 +1020,7 @@ class WebsiteSalesAgent:
         qualified_row_count = 0
 
         for label, batch_queries, geo in self._scrape_batches(queries):
+            self._check_stop()
             results_path = self._run_scraper(
                 batch_queries,
                 geo=geo,
@@ -969,6 +1032,7 @@ class WebsiteSalesAgent:
 
             raw_row_count += len(raw_rows)
             for row in raw_rows:
+                self._check_stop()
                 query = self._query_from_input_id(
                     self._pick(row, "input_id"), batch_queries
                 )
@@ -1155,6 +1219,7 @@ Build a polished production-ready website for {business_name}. Use a mobile-firs
 """
 
     def _generate_build_package_body(self, lead: dict[str, object]) -> str:
+        self._check_stop()
         model = get_active_model()
         if not model or not is_ollama_available():
             return self._fallback_build_package(lead)
@@ -1262,6 +1327,7 @@ Create a production-ready, mobile-first marketing website for {business_name}, a
 """
 
     def _generate_brief_body(self, lead: dict[str, object]) -> str:
+        self._check_stop()
         model = get_active_model()
         if not model or not is_ollama_available():
             return self._fallback_brief(lead)
@@ -1323,6 +1389,7 @@ Make it practical and sales-ready. Assume the business currently lacks a proper 
 
         generated_paths = []
         for lead in leads:
+            self._check_stop()
             filename = f"{slugify(str(lead['business_name']))}-{lead['id']}.md"
             file_path = os.path.join(get_proposal_output_dir(), filename)
             body = self._generate_brief_body(lead)
@@ -1351,6 +1418,7 @@ Make it practical and sales-ready. Assume the business currently lacks a proper 
 
         generated_paths = []
         for lead in leads:
+            self._check_stop()
             filename = f"{slugify(str(lead['business_name']))}-{lead['id']}-build.md"
             file_path = os.path.join(get_build_package_output_dir(), filename)
             body = self._generate_build_package_body(lead)
@@ -1369,6 +1437,7 @@ Make it practical and sales-ready. Assume the business currently lacks a proper 
         return generated_paths
 
     def generate_build_package_for_lead(self, lead_id: str) -> str | None:
+        self._check_stop()
         matching = [lead for lead in self.get_leads() if str(lead.get("id")) == lead_id]
         if not matching:
             self._warning("Lead ID not found for build package generation.", False)
@@ -1391,6 +1460,7 @@ Make it practical and sales-ready. Assume the business currently lacks a proper 
         return file_path
 
     def export_call_sheet(self) -> str:
+        self._check_stop()
         leads = [
             lead
             for lead in self.get_leads()
@@ -1422,6 +1492,7 @@ Make it practical and sales-ready. Assume the business currently lacks a proper 
             )
 
             for lead in leads:
+                self._check_stop()
                 writer.writerow(
                     [
                         lead["id"],
