@@ -174,6 +174,66 @@ class WebsiteSalesAgent:
         self.logger = logger
         self._scraper_flags: set[str] | None = None
 
+    def _scraper_source_marker_path(self) -> str:
+        return f"{self._binary_path()}.source-url"
+
+    def _read_scraper_source_marker(self) -> str:
+        marker_path = self._scraper_source_marker_path()
+        if not os.path.exists(marker_path):
+            return ""
+
+        with open(marker_path, "r", encoding="utf-8") as file:
+            return file.read().strip()
+
+    def _write_scraper_source_marker(self, value: str) -> None:
+        with open(self._scraper_source_marker_path(), "w", encoding="utf-8") as file:
+            file.write(str(value).strip())
+
+    def _scraper_release_asset_url(self, source_url: str) -> str:
+        match = re.search(
+            r"github\.com/gosom/google-maps-scraper/archive/refs/tags/(?P<tag>v[\w.\-]+)\.zip",
+            source_url,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return ""
+
+        tag = match.group("tag")
+        system = platform.system().lower()
+        asset_name = ""
+
+        if system == "windows":
+            asset_name = f"google_maps_scraper-{tag}-windows-amd64.exe"
+        elif system == "linux":
+            asset_name = f"google_maps_scraper-{tag}-linux-amd64"
+        elif system == "darwin":
+            asset_name = f"google_maps_scraper-{tag}-darwin-amd64"
+
+        if not asset_name:
+            return ""
+
+        return (
+            f"https://github.com/gosom/google-maps-scraper/releases/download/{tag}/{asset_name}"
+        )
+
+    def _download_binary(self, url: str) -> None:
+        self._info("Downloading google-maps-scraper binary...", False)
+        response = requests.get(url, timeout=240)
+        response.raise_for_status()
+
+        with open(self._binary_path(), "wb") as file:
+            file.write(response.content)
+
+        os.chmod(self._binary_path(), os.stat(self._binary_path()).st_mode | 0o755)
+        self._scraper_flags = None
+
+    def _should_refresh_scraper(self, source_url: str) -> bool:
+        if not os.path.exists(self._binary_path()):
+            return True
+        if not source_url:
+            return False
+        return self._read_scraper_source_marker() != source_url
+
     def _profile_text(self, profile: dict[str, object], key: str, default: str) -> str:
         value = profile.get(key, default)
         return str(value).strip() or default
@@ -327,17 +387,23 @@ class WebsiteSalesAgent:
         return flags
 
     def _ensure_scraper(self) -> None:
-        if os.path.exists(self._binary_path()):
+        source_url = get_google_maps_scraper_zip_url()
+        if not self._should_refresh_scraper(source_url):
+            return
+
+        if not source_url:
+            raise RuntimeError("google_maps_scraper is not configured in config.json")
+
+        release_asset_url = self._scraper_release_asset_url(source_url)
+        if release_asset_url:
+            self._download_binary(release_asset_url)
+            self._write_scraper_source_marker(source_url)
             return
 
         scraper_dir = self._find_scraper_dir()
         if not scraper_dir:
-            zip_url = get_google_maps_scraper_zip_url()
-            if not zip_url:
-                raise RuntimeError("google_maps_scraper is not configured in config.json")
-
             self._info("Downloading google-maps-scraper...", False)
-            response = requests.get(zip_url, timeout=120)
+            response = requests.get(source_url, timeout=120)
             response.raise_for_status()
 
             archive = zipfile.ZipFile(BytesIO(response.content))
@@ -360,6 +426,9 @@ class WebsiteSalesAgent:
             raise RuntimeError(f"Expected scraper binary at {built_binary}")
 
         os.replace(built_binary, self._binary_path())
+        os.chmod(self._binary_path(), os.stat(self._binary_path()).st_mode | 0o755)
+        self._write_scraper_source_marker(source_url)
+        self._scraper_flags = None
 
     def build_queries(self) -> list[str]:
         if self.target_queries:

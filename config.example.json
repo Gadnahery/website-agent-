@@ -22,7 +22,7 @@
   "require_missing_website": true,
   "minimum_review_count": 5,
   "minimum_rating": 3.8,
-  "google_maps_scraper": "https://github.com/gosom/google-maps-scraper/archive/refs/tags/v0.9.7.zip",
+  "google_maps_scraper": "https://github.com/gosom/google-maps-scraper/archive/refs/tags/v1.11.0.zip",
   "scraper_timeout": 300,
   "scraper_depth": 1,
   "scraper_concurrency": 2,
