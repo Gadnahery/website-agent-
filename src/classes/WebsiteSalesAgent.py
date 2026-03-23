@@ -3,6 +3,7 @@ import glob
 import hashlib
 import os
 import platform
+import re
 import subprocess
 import zipfile
 from io import BytesIO
@@ -171,6 +172,7 @@ class WebsiteSalesAgent:
         )
         self.verbose = get_verbose()
         self.logger = logger
+        self._scraper_flags: set[str] | None = None
 
     def _profile_text(self, profile: dict[str, object], key: str, default: str) -> str:
         value = profile.get(key, default)
@@ -301,6 +303,29 @@ class WebsiteSalesAgent:
             self._info(f'Running: {" ".join(command)}', False)
         self._run_command(command, cwd=cwd)
 
+    def _scraper_supported_flags(self) -> set[str]:
+        if self._scraper_flags is not None:
+            return self._scraper_flags
+
+        try:
+            result = subprocess.run(
+                [self._binary_path(), "--help"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                check=False,
+            )
+            output = f"{result.stdout}\n{result.stderr}"
+        except Exception:
+            self._scraper_flags = set()
+            return self._scraper_flags
+
+        flags = set(re.findall(r"(?m)^\s+-(\w[\w-]*)", output))
+        self._scraper_flags = flags
+        return flags
+
     def _ensure_scraper(self) -> None:
         if os.path.exists(self._binary_path()):
             return
@@ -411,6 +436,7 @@ class WebsiteSalesAgent:
         self._ensure_scraper()
         input_path = self._write_queries_file(queries)
         results_path = self._results_path(results_suffix)
+        supported_flags = self._scraper_supported_flags()
 
         args = [
             self._binary_path(),
@@ -424,17 +450,33 @@ class WebsiteSalesAgent:
             str(self.scraper_concurrency),
             "-lang",
             self.scraper_lang,
-            "-radius",
-            str(self.scraper_radius),
             "-exit-on-inactivity",
             f"{int(self.scraper_timeout)}s",
         ]
 
-        if geo:
-            args.extend(["-geo", geo])
+        if "radius" in supported_flags:
+            args.extend(["-radius", str(self.scraper_radius)])
+        elif self.scraper_radius:
+            self._warning(
+                "This scraper build does not support -radius; continuing without a radius override.",
+                False,
+            )
 
-        if self.scraper_fast_mode:
+        if geo and "geo" in supported_flags:
+            args.extend(["-geo", geo])
+        elif geo:
+            self._warning(
+                "This scraper build does not support -geo; continuing without geo targeting.",
+                False,
+            )
+
+        if self.scraper_fast_mode and "fast-mode" in supported_flags:
             args.append("-fast-mode")
+        elif self.scraper_fast_mode:
+            self._warning(
+                "This scraper build does not support -fast-mode; continuing in standard mode.",
+                False,
+            )
 
         self._info(
             f"Running Google Maps scraper for {len(queries)} query(s)"
