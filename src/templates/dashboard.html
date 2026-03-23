@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tanzania Website Agent</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="hero-kicker">Website Sales Agent</p>
+        <h1>Find the right local businesses, watch the agent think, and ship every output to one place.</h1>
+        <p class="hero-text">
+          Search by city, neighborhood, or raw business query. Keep the no-website filter on, generate briefs, export the call sheet, and sync results to Google Drive from a dashboard that works on desktop and phone.
+        </p>
+        <div class="hero-badges">
+          <span class="badge">Live scrape control</span>
+          <span class="badge">Phone-friendly</span>
+          <span class="badge">Drive-ready</span>
+        </div>
+      </div>
+      <div class="hero-side">
+        <div class="pulse-card">
+          <div class="pulse-dot"></div>
+          <div>
+            <strong>Agent Console</strong>
+            <p id="generated-at">Refreshing state...</p>
+          </div>
+        </div>
+        <div id="job-card" class="job-card empty">No job running yet.</div>
+      </div>
+    </section>
+
+    <section id="metrics-grid" class="metrics-grid"></section>
+
+    <section class="control-grid">
+      <article class="panel control-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Search Brief</p>
+            <h2>Tell the agent what to scrape</h2>
+          </div>
+          <span class="panel-tag">runtime inputs</span>
+        </div>
+
+        <div class="field-grid">
+          <label class="field">
+            <span>Country</span>
+            <input id="country" type="text" placeholder="Tanzania">
+          </label>
+          <label class="field">
+            <span>Language</span>
+            <input id="scraper-lang" type="text" placeholder="en">
+          </label>
+        </div>
+
+        <div class="preset-strip">
+          <span>Quick presets</span>
+          <div id="preset-buttons" class="preset-buttons"></div>
+        </div>
+
+        <div class="field-grid field-grid-lg">
+          <label class="field">
+            <span>Locations</span>
+            <textarea id="locations" rows="5" placeholder="Dar es Salaam&#10;Arusha&#10;Mwanza"></textarea>
+            <small>One per line or comma separated.</small>
+          </label>
+          <label class="field">
+            <span>Business types</span>
+            <textarea id="business-types" rows="5" placeholder="salon&#10;event hall&#10;restaurant"></textarea>
+            <small>Examples: salons, halls, clinics, lodges.</small>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Direct queries</span>
+          <textarea id="target-queries" rows="4" placeholder="salons in Mikocheni, Dar es Salaam&#10;conference halls in Arusha"></textarea>
+          <small>Optional. If filled, these run directly instead of cross-combining city and business type.</small>
+        </label>
+
+        <div class="field-grid field-grid-compact">
+          <label class="field">
+            <span>Min reviews</span>
+            <input id="minimum-review-count" type="number" min="0">
+          </label>
+          <label class="field">
+            <span>Min rating</span>
+            <input id="minimum-rating" type="number" min="0" max="5" step="0.1">
+          </label>
+          <label class="field">
+            <span>Depth</span>
+            <input id="scraper-depth" type="number" min="1">
+          </label>
+          <label class="field">
+            <span>Concurrency</span>
+            <input id="scraper-concurrency" type="number" min="1">
+          </label>
+          <label class="field">
+            <span>Radius (m)</span>
+            <input id="scraper-radius" type="number" min="1000" step="500">
+          </label>
+        </div>
+
+        <div class="toggle-row">
+          <label class="toggle">
+            <input id="must-have-phone" type="checkbox">
+            <span>Only keep leads with phone numbers</span>
+          </label>
+          <label class="toggle">
+            <input id="require-missing-website" type="checkbox">
+            <span>Only keep businesses missing a proper website</span>
+          </label>
+          <label class="toggle">
+            <input id="scraper-fast-mode" type="checkbox">
+            <span>Use fast scrape mode</span>
+          </label>
+        </div>
+
+        <div class="action-row">
+          <button data-action="discover" class="primary">Run Discovery</button>
+          <button data-action="export" class="secondary">Export Call Sheet</button>
+          <button data-action="sync" class="ghost">Sync To Drive</button>
+        </div>
+
+        <div class="action-row split">
+          <label class="field inline-field">
+            <span>Brief limit</span>
+            <input id="brief-limit" type="number" min="1" value="10">
+          </label>
+          <label class="field inline-field">
+            <span>Status</span>
+            <input id="brief-status" type="text" placeholder="blank = all">
+          </label>
+          <button data-action="briefs" class="secondary">Generate Briefs</button>
+        </div>
+
+        <div class="action-row split">
+          <label class="field inline-field">
+            <span>Build limit</span>
+            <input id="build-limit" type="number" min="1" value="10">
+          </label>
+          <label class="field inline-field">
+            <span>Status</span>
+            <input id="build-status" type="text" value="won">
+          </label>
+          <button data-action="builds" class="ghost">Generate Builds</button>
+        </div>
+
+        <p id="flash" class="flash"></p>
+      </article>
+
+      <article class="stack-column">
+        <section class="panel brief-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Current Search</p>
+              <h2>Agent plan</h2>
+            </div>
+            <span class="panel-tag">query brief</span>
+          </div>
+          <div id="search-brief" class="brief-content"></div>
+        </section>
+
+        <section class="panel drive-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Storage</p>
+              <h2>Google Drive</h2>
+            </div>
+            <span class="panel-tag">exports</span>
+          </div>
+          <div id="drive-status" class="drive-status"></div>
+          <div>
+            <h3>Recent Uploads</h3>
+            <div id="drive-uploads" class="stack-list"></div>
+          </div>
+        </section>
+      </article>
+    </section>
+
+    <section class="stream-grid">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Live Activity</p>
+            <h2>Agent console</h2>
+          </div>
+          <span class="panel-tag">refresh every 3s</span>
+        </div>
+        <div id="logs" class="log-console"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Recent Runs</p>
+            <h2>Job history</h2>
+          </div>
+          <span class="panel-tag">background jobs</span>
+        </div>
+        <div id="job-history" class="history-list"></div>
+      </article>
+    </section>
+
+    <section class="insight-grid">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Pipeline</p>
+            <h2>Status and city mix</h2>
+          </div>
+          <span class="panel-tag">top segments</span>
+        </div>
+        <div class="mini-columns">
+          <div>
+            <h3>Status counts</h3>
+            <div id="status-counts" class="stack-list"></div>
+          </div>
+          <div>
+            <h3>Top cities</h3>
+            <div id="city-counts" class="stack-list"></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Outputs</p>
+            <h2>Generated files</h2>
+          </div>
+          <span class="panel-tag">local + sync</span>
+        </div>
+        <div class="file-grid">
+          <div>
+            <h3>Call sheet</h3>
+            <div id="call-sheet" class="file-card"></div>
+          </div>
+          <div>
+            <h3>Latest scraper file</h3>
+            <div id="scraper-results" class="file-card"></div>
+          </div>
+          <div>
+            <h3>Batch result files</h3>
+            <div id="scraper-batches" class="stack-list"></div>
+          </div>
+          <div>
+            <h3>Recent proposals</h3>
+            <div id="proposal-files" class="stack-list"></div>
+          </div>
+          <div>
+            <h3>Recent build packages</h3>
+            <div id="build-files" class="stack-list"></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel leads-panel">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Lead Board</p>
+          <h2>Saved prospects</h2>
+        </div>
+        <span class="panel-tag">top 60 by score</span>
+      </div>
+      <div id="leads-grid" class="lead-grid"></div>
+    </section>
+  </main>
+
+  <script>
+    const leadStatuses = [];
+    let searchPresets = [];
+    let formHydrated = false;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setFlash(message, isError = false) {
+      const flash = document.getElementById("flash");
+      flash.textContent = message;
+      flash.classList.toggle("error", isError);
+    }
+
+    async function postJson(url, payload = {}) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed");
+      }
+      return data;
+    }
+
+    function renderList(containerId, entries, formatter, emptyMessage = "Nothing yet.") {
+      const container = document.getElementById(containerId);
+      if (!entries || !entries.length) {
+        container.innerHTML = `<div class="empty-list">${escapeHtml(emptyMessage)}</div>`;
+        return;
+      }
+      container.innerHTML = entries.map(formatter).join("");
+    }
+
+    function renderMetrics(metrics) {
+      const cards = [
+        ["Total leads", metrics.total_leads],
+        ["Fresh leads", metrics.new_leads],
+        ["Proposal ready", metrics.proposal_ready],
+        ["Won", metrics.won],
+        ["Avg score", metrics.avg_score],
+        ["80+ score", metrics.high_score],
+        ["Missing website", metrics.missing_website],
+        ["Weak website", (metrics.social_only || 0) + (metrics.marketplace_only || 0) + (metrics.website_builder_only || 0)],
+      ];
+
+      document.getElementById("metrics-grid").innerHTML = cards.map(([label, value]) => `
+        <article class="metric-card">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </article>
+      `).join("");
+    }
+
+    function renderJob(job, history) {
+      const card = document.getElementById("job-card");
+      if (job) {
+        card.className = `job-card ${job.status}`;
+        card.innerHTML = `
+          <h3>${escapeHtml(job.name)}</h3>
+          <p><strong>Status</strong> ${escapeHtml(job.status)}</p>
+          <p><strong>Started</strong> ${escapeHtml(job.started_at)}</p>
+          ${job.meta && Object.keys(job.meta).length ? `<p><strong>Scope</strong> ${escapeHtml(JSON.stringify(job.meta))}</p>` : ""}
+          ${job.error ? `<p class="job-error">${escapeHtml(job.error)}</p>` : ""}
+        `;
+        return;
+      }
+
+      if (history && history.length) {
+        const latest = history[0];
+        card.className = `job-card ${latest.status}`;
+        card.innerHTML = `
+          <h3>${escapeHtml(latest.name)}</h3>
+          <p><strong>Last status</strong> ${escapeHtml(latest.status)}</p>
+          <p><strong>Started</strong> ${escapeHtml(latest.started_at)}</p>
+          <p><strong>Ended</strong> ${escapeHtml(latest.ended_at || "-")}</p>
+          ${latest.error ? `<p class="job-error">${escapeHtml(latest.error)}</p>` : ""}
+        `;
+        return;
+      }
+
+      card.className = "job-card empty";
+      card.textContent = "No job running yet.";
+    }
+
+    function renderHistory(history) {
+      renderList("job-history", history || [], (job) => `
+        <div class="history-item ${escapeHtml(job.status)}">
+          <div>
+            <strong>${escapeHtml(job.name)}</strong>
+            <small>${escapeHtml(job.started_at)} to ${escapeHtml(job.ended_at || "-")}</small>
+          </div>
+          <span>${escapeHtml(job.status)}</span>
+        </div>
+      `);
+    }
+
+    function renderLogs(logs) {
+      const panel = document.getElementById("logs");
+      if (!logs || !logs.length) {
+        panel.innerHTML = `<div class="empty-list">No activity yet.</div>`;
+        return;
+      }
+
+      panel.innerHTML = logs.slice(-140).map((entry) => `
+        <div class="log-line ${escapeHtml(entry.level)}">
+          <span>${escapeHtml(entry.timestamp)}</span>
+          <strong>${escapeHtml(entry.level)}</strong>
+          <code>${escapeHtml(entry.message)}</code>
+        </div>
+      `).join("");
+      panel.scrollTop = panel.scrollHeight;
+    }
+
+    function renderCounts(statusCounts, cityCounts) {
+      renderList("status-counts", Object.entries(statusCounts || {}), ([name, count]) => `
+        <div class="stack-item">
+          <span>${escapeHtml(name)}</span>
+          <strong>${escapeHtml(count)}</strong>
+        </div>
+      `);
+
+      renderList("city-counts", cityCounts || [], ([name, count]) => `
+        <div class="stack-item">
+          <span>${escapeHtml(name)}</span>
+          <strong>${escapeHtml(count)}</strong>
+        </div>
+      `);
+    }
+
+    function formatFileCard(file) {
+      if (!file || !file.exists) {
+        return `<div class="empty-list">Not generated yet.</div>`;
+      }
+      return `
+        <div class="file-name">${escapeHtml(file.name || file.path)}</div>
+        <div class="file-meta">${escapeHtml(file.path)}</div>
+        <div class="file-submeta">Updated ${escapeHtml(file.modified_at)} | ${escapeHtml(file.size)} bytes</div>
+      `;
+    }
+
+    function renderFiles(files) {
+      document.getElementById("call-sheet").innerHTML = formatFileCard(files.call_sheet);
+      document.getElementById("scraper-results").innerHTML = formatFileCard(files.scraper_results);
+
+      renderList("scraper-batches", files.scraper_batches || [], (file) => `
+        <div class="stack-item stack-file">
+          <span>${escapeHtml(file.name || file.path)}</span>
+          <small>${escapeHtml(file.modified_at || "")}</small>
+        </div>
+      `, "No batch exports yet.");
+
+      renderList("proposal-files", files.proposals || [], (file) => `
+        <div class="stack-item stack-file">
+          <span>${escapeHtml(file.name || file.path)}</span>
+          <small>${escapeHtml(file.modified_at || "")}</small>
+        </div>
+      `);
+
+      renderList("build-files", files.build_packages || [], (file) => `
+        <div class="stack-item stack-file">
+          <span>${escapeHtml(file.name || file.path)}</span>
+          <small>${escapeHtml(file.modified_at || "")}</small>
+        </div>
+      `);
+    }
+
+    function statusSelect(lead) {
+      return `
+        <select id="status-${escapeHtml(lead.id)}">
+          ${leadStatuses.map((status) => `
+            <option value="${escapeHtml(status)}" ${status === lead.status ? "selected" : ""}>${escapeHtml(status)}</option>
+          `).join("")}
+        </select>
+      `;
+    }
+
+    function renderLeads(leads) {
+      renderList("leads-grid", leads || [], (lead) => `
+        <article class="lead-card">
+          <div class="lead-top">
+            <div>
+              <h3>${escapeHtml(lead.business_name)}</h3>
+              <p>${escapeHtml(lead.category || "Business")} in ${escapeHtml(lead.city || "Unknown city")}</p>
+            </div>
+            <div class="score-pill">${escapeHtml(lead.score)}</div>
+          </div>
+          <div class="lead-stats">
+            <span>${escapeHtml(lead.website_status)}</span>
+            <span>${escapeHtml(lead.review_rating)} rating</span>
+            <span>${escapeHtml(lead.review_count)} reviews</span>
+          </div>
+          <div class="lead-notes">${escapeHtml((lead.score_reasons || []).join(" | "))}</div>
+          <div class="lead-notes">${escapeHtml(lead.duplicate_count > 1 ? `Merged ${lead.duplicate_count} duplicate rows` : "Single-source lead")}</div>
+          <div class="lead-notes">${escapeHtml((lead.matched_queries || []).slice(0, 2).join(" | "))}</div>
+          <div class="lead-links">
+            <span>${escapeHtml(lead.phone || "No phone")}</span>
+            ${lead.maps_link ? `<a href="${escapeHtml(lead.maps_link)}" target="_blank" rel="noreferrer">Open Maps</a>` : `<span>No map link</span>`}
+          </div>
+          <div class="lead-actions">
+            ${statusSelect(lead)}
+            <button class="tiny-button" onclick="updateLeadStatus('${escapeHtml(lead.id)}')">Save Status</button>
+          </div>
+        </article>
+      `, "No saved leads yet.");
+    }
+
+    function applyPreset(preset) {
+      document.getElementById("locations").value = (preset.locations || []).join("\n");
+      document.getElementById("business-types").value = (preset.business_types || []).join("\n");
+      document.getElementById("target-queries").value = (preset.target_queries || []).join("\n");
+      if (preset.country) {
+        document.getElementById("country").value = preset.country;
+      }
+      setFlash(`Preset loaded: ${preset.name}`);
+    }
+
+    function renderPresets(presets) {
+      searchPresets = presets || [];
+      renderList("preset-buttons", searchPresets, (preset, index) => `
+        <button type="button" class="preset-button" data-preset-index="${index}">${escapeHtml(preset.name)}</button>
+      `, "No presets yet.");
+    }
+
+    function hydrateForm(defaults, lastProfile) {
+      if (formHydrated) {
+        return;
+      }
+      const profile = lastProfile || defaults || {};
+      document.getElementById("country").value = profile.country || defaults.country || "Tanzania";
+      document.getElementById("scraper-lang").value = profile.scraper_lang || defaults.scraper_lang || "en";
+      document.getElementById("locations").value = (profile.target_cities || defaults.target_cities || []).join("\n");
+      document.getElementById("business-types").value = (profile.target_niches || defaults.target_niches || []).join("\n");
+      document.getElementById("target-queries").value = (profile.target_queries || defaults.target_queries || []).join("\n");
+      document.getElementById("minimum-review-count").value = profile.minimum_review_count ?? defaults.minimum_review_count ?? 0;
+      document.getElementById("minimum-rating").value = profile.minimum_rating ?? defaults.minimum_rating ?? 0;
+      document.getElementById("scraper-depth").value = profile.scraper_depth ?? defaults.scraper_depth ?? 1;
+      document.getElementById("scraper-concurrency").value = profile.scraper_concurrency ?? defaults.scraper_concurrency ?? 1;
+      document.getElementById("scraper-radius").value = profile.scraper_radius ?? defaults.scraper_radius ?? 10000;
+      document.getElementById("must-have-phone").checked = Boolean(profile.must_have_phone ?? defaults.must_have_phone);
+      document.getElementById("require-missing-website").checked = Boolean(profile.require_missing_website ?? defaults.require_missing_website);
+      document.getElementById("scraper-fast-mode").checked = Boolean(profile.scraper_fast_mode ?? defaults.scraper_fast_mode);
+      formHydrated = true;
+    }
+
+    function renderSearchBrief(profile) {
+      const cities = profile.target_cities || [];
+      const niches = profile.target_niches || [];
+      const queries = profile.target_queries || [];
+      document.getElementById("search-brief").innerHTML = `
+        <div class="brief-item">
+          <span>Country</span>
+          <strong>${escapeHtml(profile.country || "Tanzania")}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Locations</span>
+          <strong>${escapeHtml(cities.length ? cities.join(", ") : "Using configured defaults")}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Business types</span>
+          <strong>${escapeHtml(niches.length ? niches.join(", ") : "Using configured defaults")}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Direct queries</span>
+          <strong>${escapeHtml(queries.length ? `${queries.length} custom queries` : "None")}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Estimated query count</span>
+          <strong>${escapeHtml(profile.query_count_estimate || 0)}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Filters</span>
+          <strong>${escapeHtml([
+            profile.must_have_phone ? "phone required" : "phone optional",
+            profile.require_missing_website ? "missing website only" : "all website states",
+            `min ${profile.minimum_review_count || 0} reviews`,
+            `min ${profile.minimum_rating || 0} rating`
+          ].join(" | "))}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Scraper mode</span>
+          <strong>${escapeHtml([
+            profile.scraper_fast_mode ? "fast" : "standard",
+            `depth ${profile.scraper_depth || 1}`,
+            `concurrency ${profile.scraper_concurrency || 1}`,
+            `radius ${profile.scraper_radius || 0}m`,
+            profile.scraper_lang || "en"
+          ].join(" | "))}</strong>
+        </div>
+      `;
+    }
+
+    function renderDrive(drive) {
+      const driveStatus = document.getElementById("drive-status");
+      driveStatus.className = `drive-status ${drive.ready ? "ready" : "not-ready"}`;
+      driveStatus.innerHTML = `
+        <div class="brief-item">
+          <span>Status</span>
+          <strong>${escapeHtml(drive.enabled ? (drive.ready ? "Connected" : "Needs setup") : "Disabled")}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Folder</span>
+          <strong>${escapeHtml(drive.folder_id || "Not configured")}</strong>
+        </div>
+        <div class="brief-item">
+          <span>Message</span>
+          <strong>${escapeHtml(drive.message || "")}</strong>
+        </div>
+      `;
+
+      renderList("drive-uploads", drive.recent_uploads || [], (file) => `
+        <div class="stack-item stack-file">
+          <div>
+            <span>${escapeHtml(file.name || "Drive file")}</span>
+            <small>${escapeHtml(file.path || "")}</small>
+          </div>
+          ${file.web_view_link ? `<a href="${escapeHtml(file.web_view_link)}" target="_blank" rel="noreferrer">Open</a>` : `<small>Uploaded</small>`}
+        </div>
+      `, "No synced files yet.");
+    }
+
+    function discoveryPayload() {
+      return {
+        country: document.getElementById("country").value,
+        locations: document.getElementById("locations").value,
+        business_types: document.getElementById("business-types").value,
+        target_queries: document.getElementById("target-queries").value,
+        must_have_phone: document.getElementById("must-have-phone").checked,
+        require_missing_website: document.getElementById("require-missing-website").checked,
+        minimum_review_count: document.getElementById("minimum-review-count").value,
+        minimum_rating: document.getElementById("minimum-rating").value,
+        scraper_depth: document.getElementById("scraper-depth").value,
+        scraper_concurrency: document.getElementById("scraper-concurrency").value,
+        scraper_radius: document.getElementById("scraper-radius").value,
+        scraper_fast_mode: document.getElementById("scraper-fast-mode").checked,
+        scraper_lang: document.getElementById("scraper-lang").value,
+      };
+    }
+
+    async function updateLeadStatus(leadId) {
+      const select = document.getElementById(`status-${leadId}`);
+      try {
+        await postJson(`/api/leads/${leadId}/status`, { status: select.value });
+        setFlash(`Lead ${leadId} updated to ${select.value}`);
+        await refresh();
+      } catch (error) {
+        setFlash(error.message, true);
+      }
+    }
+
+    async function trigger(action) {
+      if (action === "discover") {
+        await postJson("/api/actions/discover", discoveryPayload());
+        setFlash("Lead discovery started.");
+        return;
+      }
+
+      if (action === "export") {
+        await postJson("/api/actions/export-call-sheet");
+        setFlash("Call sheet export started.");
+        return;
+      }
+
+      if (action === "sync") {
+        await postJson("/api/actions/sync-exports");
+        setFlash("Drive sync started.");
+        return;
+      }
+
+      if (action === "briefs") {
+        await postJson("/api/actions/briefs", {
+          limit: document.getElementById("brief-limit").value,
+          status_filter: document.getElementById("brief-status").value,
+        });
+        setFlash("Proposal generation started.");
+        return;
+      }
+
+      if (action === "builds") {
+        await postJson("/api/actions/build-packages", {
+          limit: document.getElementById("build-limit").value,
+          status_filter: document.getElementById("build-status").value,
+        });
+        setFlash("Build package generation started.");
+      }
+    }
+
+    async function refresh() {
+      const response = await fetch("/api/state");
+      const data = await response.json();
+
+      leadStatuses.splice(0, leadStatuses.length, ...(data.lead_statuses || []));
+
+      document.getElementById("generated-at").textContent = `Updated ${data.generated_at}`;
+      hydrateForm(data.search_defaults || {}, data.last_discovery_profile || {});
+      renderMetrics(data.metrics || {});
+      renderPresets(data.search_presets || []);
+      renderJob(data.job, data.job_history || []);
+      renderHistory(data.job_history || []);
+      renderSearchBrief(data.last_discovery_profile || {});
+      renderDrive(data.drive || {});
+      renderLogs(data.logs || []);
+      renderCounts(data.status_counts || {}, data.city_counts || []);
+      renderLeads(data.leads || []);
+      renderFiles(data.files || {});
+    }
+
+    document.querySelectorAll("[data-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await trigger(button.dataset.action);
+          await refresh();
+        } catch (error) {
+          setFlash(error.message, true);
+        }
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      const triggerButton = event.target.closest("[data-preset-index]");
+      if (!triggerButton) {
+        return;
+      }
+
+      const index = Number(triggerButton.dataset.presetIndex);
+      const preset = searchPresets[index];
+      if (preset) {
+        applyPreset(preset);
+      }
+    });
+
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

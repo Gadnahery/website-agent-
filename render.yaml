@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: tanzania-website-agent
+    runtime: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /api/state
+    disk:
+      name: agent-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: MPRINTER_OPEN_BROWSER
+        value: "0"
+      - key: MPRINTER_DASHBOARD_HOST
+        value: "0.0.0.0"
+      - key: MPRINTER_DATA_DIR
+        value: "/var/data"
+      - key: GOOGLE_DRIVE_ENABLED
+        value: "false"

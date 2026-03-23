@@ -1,34 +1,32 @@
 #!/usr/bin/env python3
+import importlib.util
 import json
 import os
+import shutil
 import sys
-from typing import Tuple
-
-import requests
+import urllib.request
 
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(ROOT_DIR, "config.json")
 
 
-def ok(msg: str) -> None:
-    print(f"[OK] {msg}")
+def ok(message: str) -> None:
+    print(f"[OK] {message}")
 
 
-def warn(msg: str) -> None:
-    print(f"[WARN] {msg}")
+def warn(message: str) -> None:
+    print(f"[WARN] {message}")
 
 
-def fail(msg: str) -> None:
-    print(f"[FAIL] {msg}")
+def fail(message: str) -> None:
+    print(f"[FAIL] {message}")
 
 
-def check_url(url: str, timeout: int = 3) -> Tuple[bool, str]:
-    try:
-        response = requests.get(url, timeout=timeout)
-        return True, f"HTTP {response.status_code}"
-    except Exception as exc:
-        return False, str(exc)
+def url_status(url: str, timeout: int = 10) -> int | None:
+    request = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return getattr(response, "status", None)
 
 
 def main() -> int:
@@ -36,78 +34,91 @@ def main() -> int:
         fail(f"Missing config file: {CONFIG_PATH}")
         return 1
 
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
+    with open(CONFIG_PATH, "r", encoding="utf-8") as file:
+        cfg = json.load(file)
 
     failures = 0
 
-    stt_provider = str(cfg.get("stt_provider", "local_whisper")).lower()
-
-    ok(f"stt_provider={stt_provider}")
-
-    imagemagick_path = cfg.get("imagemagick_path", "")
-    if imagemagick_path and os.path.exists(imagemagick_path):
-        ok(f"imagemagick_path exists: {imagemagick_path}")
-    else:
-        warn(
-            "imagemagick_path is not set to a valid executable path. "
-            "MoviePy subtitle rendering may fail."
+    missing_packages = [
+        package
+        for package in ("requests", "termcolor", "prettytable", "ollama")
+        if importlib.util.find_spec(package) is None
+    ]
+    if missing_packages:
+        fail(
+            "Missing Python packages: "
+            + ", ".join(missing_packages)
+            + ". Install them with `venv\\Scripts\\python.exe -m pip install -r requirements.txt` "
+            + "or `venv/bin/python -m pip install -r requirements.txt`."
         )
+        failures += 1
+    else:
+        ok("Required Python packages are installed")
 
-    firefox_profile = cfg.get("firefox_profile", "")
-    if firefox_profile:
-        if os.path.isdir(firefox_profile):
-            ok(f"firefox_profile exists: {firefox_profile}")
+    country = str(cfg.get("country", "")).strip()
+    if country:
+        ok(f"country={country}")
+    else:
+        fail("country is empty")
+        failures += 1
+
+    niches = cfg.get("target_niches", [])
+    queries = cfg.get("target_queries", [])
+    if niches or queries:
+        ok("At least one niche/query source is configured")
+    else:
+        fail("Both target_niches and target_queries are empty")
+        failures += 1
+
+    scraper_binaries = [
+        os.path.join(ROOT_DIR, "google-maps-scraper.exe"),
+        os.path.join(ROOT_DIR, "google-maps-scraper"),
+    ]
+
+    if shutil.which("go"):
+        ok("Go is installed")
+    elif any(os.path.exists(path) for path in scraper_binaries):
+        ok("Local scraper binary is present")
+    else:
+        fail("Neither Go nor a local google-maps-scraper binary is available")
+        failures += 1
+
+    scraper_zip = str(cfg.get("google_maps_scraper", "")).strip()
+    if scraper_zip:
+        try:
+            status = url_status(scraper_zip, timeout=10)
+            ok(f"Scraper URL reachable: HTTP {status}")
+        except Exception as exc:
+            warn(f"Could not reach scraper URL: {exc}")
+    else:
+        fail("google_maps_scraper is empty")
+        failures += 1
+
+    ollama_model = str(cfg.get("ollama_model", "")).strip()
+    ollama_base = str(cfg.get("ollama_base_url", "http://127.0.0.1:11434")).rstrip("/")
+    if ollama_model:
+        try:
+            status = url_status(f"{ollama_base}/api/tags", timeout=5)
+            ok(f"Ollama reachable at {ollama_base}: HTTP {status}")
+        except Exception as exc:
+            warn(f"Ollama model is configured but server is not reachable: {exc}")
+    else:
+        warn("ollama_model is blank; proposal generation will use the template brief")
+
+    proposal_dir = os.path.join(ROOT_DIR, str(cfg.get("proposal_output_dir", "proposals")))
+    ok(f"proposal_output_dir={proposal_dir}")
+    build_package_dir = os.path.join(
+        ROOT_DIR, str(cfg.get("build_package_output_dir", "build-packages"))
+    )
+    ok(f"build_package_output_dir={build_package_dir}")
+
+    if bool(cfg.get("scraper_fast_mode", False)):
+        scraper_geo = str(cfg.get("scraper_geo", "")).strip()
+        city_geos = cfg.get("city_geos", {})
+        if scraper_geo or (isinstance(city_geos, dict) and city_geos):
+            ok("Fast scraper mode has coordinates configured")
         else:
-            warn(f"firefox_profile does not exist: {firefox_profile}")
-    else:
-        warn("firefox_profile is empty. Twitter/YouTube automation requires this.")
-
-    # Ollama (LLM)
-    base = str(cfg.get("ollama_base_url", "http://127.0.0.1:11434")).rstrip("/")
-    reachable, detail = check_url(f"{base}/api/tags")
-    if not reachable:
-        fail(f"Ollama is not reachable at {base}: {detail}")
-        failures += 1
-    else:
-        ok(f"Ollama reachable at {base}")
-        try:
-            tags = requests.get(f"{base}/api/tags", timeout=5).json()
-            models = [m.get("name") for m in tags.get("models", [])]
-            if models:
-                ok(f"Ollama models available: {', '.join(models[:10])}")
-            else:
-                warn("No models found on Ollama. Pull a model first (e.g. 'ollama pull llama3.2:3b').")
-        except Exception as exc:
-            warn(f"Could not validate Ollama model list: {exc}")
-
-    # Nano Banana 2 (image generation)
-    api_key = cfg.get("nanobanana2_api_key", "") or os.environ.get("GEMINI_API_KEY", "")
-    nb2_base = str(
-        cfg.get(
-            "nanobanana2_api_base_url",
-            "https://generativelanguage.googleapis.com/v1beta",
-        )
-    ).rstrip("/")
-    if api_key:
-        ok("nanobanana2_api_key is set")
-    else:
-        fail("nanobanana2_api_key is empty (and GEMINI_API_KEY is not set)")
-        failures += 1
-
-    reachable, detail = check_url(nb2_base, timeout=8)
-    if not reachable:
-        warn(f"Nano Banana 2 base URL could not be reached: {detail}")
-    else:
-        ok(f"Nano Banana 2 base URL reachable: {nb2_base}")
-
-    if stt_provider == "local_whisper":
-        try:
-            import faster_whisper  # noqa: F401
-
-            ok("faster-whisper is installed")
-        except Exception as exc:
-            fail(f"faster-whisper is not importable: {exc}")
+            fail("scraper_fast_mode is enabled but scraper_geo/city_geos are empty")
             failures += 1
 
     if failures:

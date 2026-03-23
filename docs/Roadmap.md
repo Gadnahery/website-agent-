@@ -1,18 +1,10 @@
-# MPV2 Roadmap
+# Roadmap
 
-This document outlines the features that need to be implemented in MPV2.
+## Next Good Improvements
 
-## Features
-
-- [ ] Automated Cold Calling
-- [ ] Item Flipping (such as sneakers)
-- [ ] Create a Short based on long-form content
-- [ ] Subtitles for Shorts
-
-## Adding a new feature
-
-If you want to add a new feature to MPV2, please create a new issue and label it with `enhancement`. After that, create a new branch and start working on the feature. Once you are done, create a pull request and assign it to the issue you created earlier.
-
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
+- Add CSV import for your own hand-picked leads
+- Add “do not call again” reason tracking
+- Add WhatsApp-first outreach exports
+- Add quote generation based on business size
+- Add one-command build handoff when a lead becomes `won`
+- Add tests around scoring and website detection

@@ -1,98 +1,104 @@
-# MoneyPrinter V2
+# Tanzania Website Sales Agent
 
-> ♥︎ **Sponsor**: The Best AI Chat App: [shiori.ai](https://www.shiori.ai)
+This repo is now focused on one thing: finding Tanzania businesses that are good website prospects, keeping the ones that have phone numbers and no proper website, and generating proposal briefs so the only manual step is outreach and, if the lead agrees, build.
 
----
+## What It Does
 
-> 𝕏 Also, follow me on X: [@DevBySami](https://x.com/DevBySami).
+- Builds Google Maps search queries from Tanzania cities and niches
+- Accepts runtime search targets from the dashboard, including custom locations, business types, and direct search phrases
+- Runs the `gosom/google-maps-scraper` binary locally
+- Filters for leads with a phone number and no owned website
+- Scores leads by niche fit, reviews, and likely ability to pay
+- Stores the pipeline locally in `.mp/website_leads.json`
+- Generates website strategy briefs in `proposals/`
+- Generates won-lead build packages in `build-packages/`
+- Exports a cold-calling sheet in `.mp/call_sheet.csv`
+- Optionally syncs CSVs and generated files to Google Drive
 
-[![madewithlove](https://img.shields.io/badge/made_with-%E2%9D%A4-red?style=for-the-badge&labelColor=orange)](https://github.com/FujiwaraChoki/MoneyPrinterV2)
+## Default ICP
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-brightgreen?logo=buymeacoffee)](https://www.buymeacoffee.com/fujicodes)
-[![GitHub license](https://img.shields.io/github/license/FujiwaraChoki/MoneyPrinterV2?style=for-the-badge)](https://github.com/FujiwaraChoki/MoneyPrinterV2/blob/main/LICENSE)
-[![GitHub issues](https://img.shields.io/github/issues/FujiwaraChoki/MoneyPrinterV2?style=for-the-badge)](https://github.com/FujiwaraChoki/MoneyPrinterV2/issues)
-[![GitHub stars](https://img.shields.io/github/stars/FujiwaraChoki/MoneyPrinterV2?style=for-the-badge)](https://github.com/FujiwaraChoki/MoneyPrinterV2/stargazers)
-[![Discord](https://img.shields.io/discord/1134848537704804432?style=for-the-badge)](https://dsc.gg/fuji-community)
+The default config is tuned for hospitality and tourism leads:
 
-An Application that automates the process of making money online.
-MPV2 (MoneyPrinter Version 2) is, as the name suggests, the second version of the MoneyPrinter project. It is a complete rewrite of the original project, with a focus on a wider range of features and a more modular architecture.
+- Hotels
+- Resorts
+- Lodges
+- Guest houses
+- Safari lodges
+- Tour operators
 
-> **Note:** MPV2 needs Python 3.12 to function effectively.
-> Watch the YouTube video [here](https://youtu.be/wAZ_ZSuIqfk)
+You can expand this by editing `target_niches` or providing direct `target_queries` in `config.json`.
 
-## Features
+## Setup
 
-- [x] Twitter Bot (with CRON Jobs => `scheduler`)
-- [x] YouTube Shorts Automater (with CRON Jobs => `scheduler`)
-- [x] Affiliate Marketing (Amazon + Twitter)
-- [x] Find local businesses & cold outreach
+### PowerShell (Windows)
 
-## Versions
-
-MoneyPrinter has different versions for multiple languages developed by the community for the community. Here are some known versions:
-
-- Chinese: [MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo)
-
-If you would like to submit your own version/fork of MoneyPrinter, please open an issue describing the changes you made to the fork.
-
-## Installation
-
-> ⚠️ If you are planning to reach out to scraped businesses per E-Mail, please first install the [Go Programming Language](https://golang.org/).
-
-```bash
-git clone https://github.com/FujiwaraChoki/MoneyPrinterV2.git
-
-cd MoneyPrinterV2
-# Copy Example Configuration and fill out values in config.json
-cp config.example.json config.json
-
-# Create a virtual environment
-python -m venv venv
-
-# Activate the virtual environment - Windows
-.\venv\Scripts\activate
-
-# Activate the virtual environment - Unix
-source venv/bin/activate
-
-# Install the requirements
-pip install -r requirements.txt
+```powershell
+.\scripts\setup_local.ps1
+.\venv\Scripts\Activate.ps1
+python src\main.py
 ```
 
-## Usage
+Dashboard mode:
+
+```powershell
+.\venv\Scripts\python.exe src\dashboard.py
+```
+
+Deployment-friendly environment variables are listed in `.env.example`.
+
+The dashboard now lets you enter:
+
+- target locations like `Dar es Salaam`, `Arusha`, or specific neighborhoods
+- business types like `salons`, `halls`, `clinics`, or `lodges`
+- direct queries like `event halls in Kariakoo, Dar es Salaam`
+- one-tap presets like Dar salons, Dar halls, and neighborhood searches
+
+### Bash
 
 ```bash
-# Run the application
+bash scripts/setup_local.sh
+source venv/bin/activate
 python src/main.py
 ```
 
-## Documentation
+Manual setup also works:
 
-All relevant document can be found [here](docs/).
+1. Copy `config.example.json` to `config.json`
+2. Install Python 3.12 if you want the safest target version
+3. Create a virtual environment
+4. Install dependencies with `pip install -r requirements.txt`
+5. Install Go so the scraper can be built
+6. Optionally install Ollama and set `ollama_model` if you want AI-written proposal briefs
 
-## Scripts
+## Run
 
-For easier usage, there are some scripts in the `scripts` directory, that can be used to directly access the core functionality of MPV2, without the need of user interaction.
+```text
+Windows: .\venv\Scripts\python.exe src\main.py
+Panel:   http://127.0.0.1:5055
+Bash:    ./venv/bin/python src/main.py
+```
 
-All scripts need to be run from the root directory of the project, e.g. `bash scripts/upload_video.sh`.
+## Main Workflow
 
-## Contributing
+1. Discover Tanzania website leads
+2. Review saved leads
+3. Generate website proposal briefs
+4. Export call sheet
+5. Update lead status
+6. Generate build packages for won leads
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us. Check out [docs/Roadmap.md](docs/Roadmap.md) for a list of features that need to be implemented.
+## Important Notes
 
-## Code of Conduct
+- "Likely to pay" is a heuristic, not a guarantee
+- Businesses with only social or marketplace links are treated as missing a proper owned website
+- Proposal generation works without Ollama, but it falls back to a template brief
+- Marking a lead as `won` auto-generates a build package if one does not already exist
+- The scraper depends on the external Google Maps scraper project and on Google Maps not blocking the job
+- If broad searches hang, enable `scraper_fast_mode` and set `scraper_geo` or `city_geos` in `config.json`
 
-Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for details on our code of conduct, and the process for submitting pull requests to us.
+## Docs
 
-## License
-
-MoneyPrinterV2 is licensed under `Affero General Public License v3.0`. See [LICENSE](LICENSE) for more information.
-
-## Acknowledgments
-
-- [KittenTTS](https://github.com/KittenML/KittenTTS)
-- [gpt4free](https://github.com/xtekky/gpt4free)
-
-## Disclaimer
-
-This project is for educational purposes only. The author will not be responsible for any misuse of the information provided. All the information on this website is published in good faith and for general information purpose only. The author does not make any warranties about the completeness, reliability, and accuracy of this information. Any action you take upon the information you find on this website (FujiwaraChoki/MoneyPrinterV2), is strictly at your own risk. The author will not be liable for any losses and/or damages in connection with the use of our website.
+- [Configuration](docs/Configuration.md)
+- [Workflow](docs/TanzaniaWebsiteAgent.md)
+- [Deployment](docs/Deployment.md)
+- [Roadmap](docs/Roadmap.md)

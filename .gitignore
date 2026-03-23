@@ -1,6 +1,7 @@
 __pycache__
 config.json
 .mp/
+data/
 venv/
 Songs/
 google-maps-scraper-0.9.7/
@@ -8,3 +9,7 @@ niche.txt
 *.exe
 auto.sh
 .DS_Store
+proposals/
+build-packages/
+.tools/
+.vercel/

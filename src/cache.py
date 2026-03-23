@@ -1,193 +1,92 @@
-import os
 import json
+import os
+from typing import Any
 
-from typing import List
-from config import ROOT_DIR
+from config import get_data_root_dir
+
 
 def get_cache_path() -> str:
-    """
-    Gets the path to the cache file.
+    return os.path.join(get_data_root_dir(), ".mp")
 
-    Returns:
-        path (str): The path to the cache folder
-    """
-    return os.path.join(ROOT_DIR, '.mp')
 
-def get_afm_cache_path() -> str:
-    """
-    Gets the path to the Affiliate Marketing cache file.
+def get_leads_cache_path() -> str:
+    return os.path.join(get_cache_path(), "website_leads.json")
 
-    Returns:
-        path (str): The path to the AFM cache folder
-    """
-    return os.path.join(get_cache_path(), 'afm.json')
 
-def get_twitter_cache_path() -> str:
-    """
-    Gets the path to the Twitter cache file.
+def get_scraper_input_path() -> str:
+    return os.path.join(get_cache_path(), "search_queries.txt")
 
-    Returns:
-        path (str): The path to the Twitter cache folder
-    """
-    return os.path.join(get_cache_path(), 'twitter.json')
 
-def get_youtube_cache_path() -> str:
-    """
-    Gets the path to the YouTube cache file.
+def get_scraper_results_path() -> str:
+    return os.path.join(get_cache_path(), "scraper_results.csv")
 
-    Returns:
-        path (str): The path to the YouTube cache folder
-    """
-    return os.path.join(get_cache_path(), 'youtube.json')
 
-def get_provider_cache_path(provider: str) -> str:
-    """
-    Gets the cache path for a supported account provider.
+def get_call_sheet_path() -> str:
+    return os.path.join(get_cache_path(), "call_sheet.csv")
 
-    Args:
-        provider (str): The provider name ("twitter" or "youtube")
 
-    Returns:
-        path (str): The provider-specific cache path
+def _initial_payload() -> dict[str, Any]:
+    return {"leads": []}
 
-    Raises:
-        ValueError: If the provider is unsupported
-    """
-    if provider == "twitter":
-        return get_twitter_cache_path()
-    if provider == "youtube":
-        return get_youtube_cache_path()
 
-    raise ValueError(f"Unsupported provider '{provider}'. Expected 'twitter' or 'youtube'.")
-
-def get_accounts(provider: str) -> List[dict]:
-    """
-    Gets the accounts from the cache.
-
-    Args:
-        provider (str): The provider to get the accounts for
-
-    Returns:
-        account (List[dict]): The accounts
-    """
-    cache_path = get_provider_cache_path(provider)
+def load_leads() -> list[dict[str, Any]]:
+    cache_path = get_leads_cache_path()
 
     if not os.path.exists(cache_path):
-        # Create the cache file
-        with open(cache_path, 'w') as file:
-            json.dump({
-                "accounts": []
-            }, file, indent=4)
+        with open(cache_path, "w", encoding="utf-8") as file:
+            json.dump(_initial_payload(), file, indent=2)
 
-    with open(cache_path, 'r') as file:
-        parsed = json.load(file)
+    with open(cache_path, "r", encoding="utf-8") as file:
+        payload = json.load(file) or _initial_payload()
+        return list(payload.get("leads", []))
 
-        if parsed is None:
-            return []
-        
-        if 'accounts' not in parsed:
-            return []
 
-        # Get accounts dictionary
-        return parsed['accounts']
+def save_leads(leads: list[dict[str, Any]]) -> None:
+    with open(get_leads_cache_path(), "w", encoding="utf-8") as file:
+        json.dump({"leads": leads}, file, indent=2, ensure_ascii=False)
 
-def add_account(provider: str, account: dict) -> None:
-    """
-    Adds an account to the cache.
 
-    Args:
-        provider (str): The provider to add the account to ("twitter" or "youtube")
-        account (dict): The account to add
+def upsert_leads(incoming_leads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    existing = {lead["id"]: lead for lead in load_leads()}
 
-    Returns:
-        None
-    """
-    cache_path = get_provider_cache_path(provider)
+    for lead in incoming_leads:
+        lead_id = lead["id"]
+        previous = existing.get(lead_id, {})
 
-    # Get the current accounts
-    accounts = get_accounts(provider)
+        merged = dict(previous)
+        merged.update(lead)
+        merged["created_at"] = previous.get("created_at", lead.get("created_at", ""))
+        merged["status"] = previous.get("status", lead.get("status", "new"))
+        merged["notes"] = previous.get("notes", lead.get("notes", ""))
+        merged["proposal_path"] = previous.get(
+            "proposal_path", lead.get("proposal_path", "")
+        )
+        merged["build_package_path"] = previous.get(
+            "build_package_path", lead.get("build_package_path", "")
+        )
+        merged["last_contacted_at"] = previous.get("last_contacted_at", "")
+        existing[lead_id] = merged
 
-    # Add the new account
-    accounts.append(account)
+    leads = sorted(
+        existing.values(),
+        key=lambda item: (item.get("score", 0), item.get("review_count", 0)),
+        reverse=True,
+    )
+    save_leads(leads)
+    return leads
 
-    # Write the new accounts to the cache
-    with open(cache_path, 'w') as file:
-        json.dump({
-            "accounts": accounts
-        }, file, indent=4)
 
-def remove_account(provider: str, account_id: str) -> None:
-    """
-    Removes an account from the cache.
+def update_lead(lead_id: str, **fields: Any) -> dict[str, Any] | None:
+    leads = load_leads()
+    updated = None
 
-    Args:
-        provider (str): The provider to remove the account from ("twitter" or "youtube")
-        account_id (str): The ID of the account to remove
+    for lead in leads:
+        if lead.get("id") == lead_id:
+            lead.update(fields)
+            updated = lead
+            break
 
-    Returns:
-        None
-    """
-    # Get the current accounts
-    accounts = get_accounts(provider)
+    if updated is not None:
+        save_leads(leads)
 
-    # Remove the account
-    accounts = [account for account in accounts if account['id'] != account_id]
-
-    # Write the new accounts to the cache
-    cache_path = get_provider_cache_path(provider)
-
-    with open(cache_path, 'w') as file:
-        json.dump({
-            "accounts": accounts
-        }, file, indent=4)
-
-def get_products() -> List[dict]:
-    """
-    Gets the products from the cache.
-
-    Returns:
-        products (List[dict]): The products
-    """
-    if not os.path.exists(get_afm_cache_path()):
-        # Create the cache file
-        with open(get_afm_cache_path(), 'w') as file:
-            json.dump({
-                "products": []
-            }, file, indent=4)
-
-    with open(get_afm_cache_path(), 'r') as file:
-        parsed = json.load(file)
-
-        # Get the products
-        return parsed["products"]
-    
-def add_product(product: dict) -> None:
-    """
-    Adds a product to the cache.
-
-    Args:
-        product (dict): The product to add
-
-    Returns:
-        None
-    """
-    # Get the current products
-    products = get_products()
-
-    # Add the new product
-    products.append(product)
-
-    # Write the new products to the cache
-    with open(get_afm_cache_path(), 'w') as file:
-        json.dump({
-            "products": products
-        }, file, indent=4)
-    
-def get_results_cache_path() -> str:
-    """
-    Gets the path to the results cache file.
-
-    Returns:
-        path (str): The path to the results cache folder
-    """
-    return os.path.join(get_cache_path(), 'scraper_results.csv')
+    return updated
