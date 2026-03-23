@@ -625,6 +625,15 @@ class WebsiteSalesAgent:
                 location = location[: -len(country_value)]
         return location.strip(" ,").title()
 
+    def _query_category(self, query: str) -> str:
+        text = str(query).strip()
+        lowered = text.lower()
+        marker = " in "
+        index = lowered.find(marker)
+        if index >= 0:
+            text = text[:index]
+        return text.strip(" ,").title()
+
     def _city_priority_bonus(self, city: str) -> tuple[int, list[str]]:
         haystack = city.lower()
         for name, bonus in CITY_PRIORITY_BONUSES.items():
@@ -763,6 +772,8 @@ class WebsiteSalesAgent:
             return queries[index]
         if 1 <= index <= len(queries):
             return queries[index - 1]
+        if len(queries) == 1:
+            return queries[0]
         return ""
 
     def _lead_id(self, title: str, phone: str, address: str) -> str:
@@ -862,6 +873,8 @@ class WebsiteSalesAgent:
     ) -> dict[str, str | int | float | list[str]]:
         title = self._pick(row, "title", "name")
         category = self._pick(row, "category")
+        if not category:
+            category = self._query_category(query)
         address = self._pick(row, "complete_address", "address")
         website = self._pick(row, "website")
         phone = normalize_phone(self._pick(row, "phone"))
