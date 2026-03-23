@@ -199,15 +199,16 @@ class WebsiteSalesAgent:
             return ""
 
         tag = match.group("tag")
+        version = tag.removeprefix("v")
         system = platform.system().lower()
         asset_name = ""
 
         if system == "windows":
-            asset_name = f"google_maps_scraper-{tag}-windows-amd64.exe"
+            asset_name = f"google_maps_scraper-{version}-windows-amd64.exe"
         elif system == "linux":
-            asset_name = f"google_maps_scraper-{tag}-linux-amd64"
+            asset_name = f"google_maps_scraper-{version}-linux-amd64"
         elif system == "darwin":
-            asset_name = f"google_maps_scraper-{tag}-darwin-amd64"
+            asset_name = f"google_maps_scraper-{version}-darwin-amd64"
 
         if not asset_name:
             return ""
