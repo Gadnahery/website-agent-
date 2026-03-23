@@ -1,9 +1,8 @@
 import json
 import os
-import sys
 from typing import Any
 
-ROOT_DIR = os.path.dirname(sys.path[0])
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _env(name: str, default: str = "") -> str:
