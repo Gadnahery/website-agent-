@@ -78,6 +78,18 @@ def get_scraper_timeout() -> int:
     return int(_load_config().get("scraper_timeout", 300))
 
 
+def get_scraper_process_timeout() -> int:
+    return int(_load_config().get("scraper_process_timeout", 0))
+
+
+def get_scraper_exit_on_inactivity() -> int:
+    return int(_load_config().get("scraper_exit_on_inactivity", 90))
+
+
+def get_scraper_batch_size() -> int:
+    return int(_load_config().get("scraper_batch_size", 3))
+
+
 def get_scraper_depth() -> int:
     return int(_load_config().get("scraper_depth", 1))
 

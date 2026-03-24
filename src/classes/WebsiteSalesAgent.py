@@ -37,9 +37,12 @@ from config import (
     get_require_missing_website,
     get_scraper_concurrency,
     get_scraper_depth,
+    get_scraper_exit_on_inactivity,
     get_scraper_fast_mode,
     get_scraper_geo,
     get_scraper_lang,
+    get_scraper_batch_size,
+    get_scraper_process_timeout,
     get_scraper_radius,
     get_scraper_timeout,
     get_service_offer_name,
@@ -165,6 +168,18 @@ class WebsiteSalesAgent:
         )
         self.scraper_timeout = self._profile_int(
             profile, "scraper_timeout", get_scraper_timeout()
+        )
+        self.scraper_process_timeout = self._profile_int(
+            profile, "scraper_process_timeout", get_scraper_process_timeout()
+        )
+        self.scraper_exit_on_inactivity = self._profile_int(
+            profile,
+            "scraper_exit_on_inactivity",
+            get_scraper_exit_on_inactivity(),
+        )
+        self.scraper_batch_size = max(
+            1,
+            self._profile_int(profile, "scraper_batch_size", get_scraper_batch_size()),
         )
         self.scraper_depth = self._profile_int(profile, "scraper_depth", get_scraper_depth())
         self.scraper_concurrency = self._profile_int(
@@ -541,33 +556,60 @@ class WebsiteSalesAgent:
                 return geo
         return ""
 
+    def _chunk_queries(self, queries: list[str]) -> list[list[str]]:
+        if len(queries) <= self.scraper_batch_size:
+            return [queries]
+
+        return [
+            queries[index : index + self.scraper_batch_size]
+            for index in range(0, len(queries), self.scraper_batch_size)
+        ]
+
     def _scrape_batches(self, queries: list[str]) -> list[tuple[str, list[str], str]]:
+        batches: list[tuple[str, list[str], str]] = []
         if not self.scraper_fast_mode:
-            return [("all", queries, self.scraper_geo)]
+            query_groups = [("all", queries, self.scraper_geo)]
+        else:
+            configured_geo = self.scraper_geo
+            if configured_geo:
+                query_groups = [("all", queries, configured_geo)]
+            else:
+                grouped: dict[str, list[str]] = {}
+                for query in queries:
+                    geo = self._query_geo(query)
+                    if not geo:
+                        raise RuntimeError(
+                            "scraper_fast_mode requires either `scraper_geo` or matching `city_geos` entries in config.json."
+                        )
+                    grouped.setdefault(geo, []).append(query)
 
-        configured_geo = self.scraper_geo
-        if configured_geo:
-            return [("all", queries, configured_geo)]
+                query_groups = []
+                for geo, batch_queries in grouped.items():
+                    query_groups.append((batch_queries[0], batch_queries, geo))
 
-        grouped: dict[str, list[str]] = {}
-        for query in queries:
-            geo = self._query_geo(query)
-            if not geo:
-                raise RuntimeError(
-                    "scraper_fast_mode requires either `scraper_geo` or matching `city_geos` entries in config.json."
-                )
-            grouped.setdefault(geo, []).append(query)
+        for label, grouped_queries, geo in query_groups:
+            chunks = self._chunk_queries(grouped_queries)
+            if len(chunks) == 1:
+                batches.append((label, chunks[0], geo))
+                continue
 
-        batches = []
-        for geo, batch_queries in grouped.items():
-            batches.append((batch_queries[0], batch_queries, geo))
+            for index, chunk in enumerate(chunks, start=1):
+                batches.append((f"{label}-{index}", chunk, geo))
+
         return batches
 
-    def _run_scraper(self, queries: list[str], geo: str = "", results_suffix: str = "") -> str:
+    def _run_scraper(
+        self,
+        queries: list[str],
+        geo: str = "",
+        results_suffix: str = "",
+        batch_name: str = "",
+    ) -> str:
         self._ensure_scraper()
         input_path = self._write_queries_file(queries)
         results_path = self._results_path(results_suffix)
         supported_flags = self._scraper_supported_flags()
+        process_timeout = self._scraper_command_timeout(len(queries))
 
         args = [
             self._binary_path(),
@@ -582,7 +624,7 @@ class WebsiteSalesAgent:
             "-lang",
             self.scraper_lang,
             "-exit-on-inactivity",
-            f"{int(self.scraper_timeout)}s",
+            f"{int(self.scraper_exit_on_inactivity)}s",
         ]
 
         if "radius" in supported_flags:
@@ -613,15 +655,61 @@ class WebsiteSalesAgent:
             f"Running Google Maps scraper for {len(queries)} query(s)"
             + (f" near {geo}" if geo else "")
             + (" in fast mode" if self.scraper_fast_mode else "")
+            + (
+                f" [{batch_name}]"
+                if batch_name
+                else ""
+            )
             + "...",
             False,
         )
-        self._run_command(args, timeout=self.scraper_timeout + 120)
+        try:
+            self._run_command(args, timeout=process_timeout)
+        except subprocess.TimeoutExpired as exc:
+            if os.path.exists(results_path) and os.path.getsize(results_path) > 0:
+                self._warning(
+                    f"{batch_name or 'Scraper batch'} timed out after {process_timeout}s;"
+                    f" continuing with partial results from {os.path.basename(results_path)}.",
+                    False,
+                )
+                return results_path
+            raise RuntimeError(
+                f"{batch_name or 'Scraper batch'} timed out after {process_timeout}s"
+                f" while processing {len(queries)} query(s)."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            if os.path.exists(results_path) and os.path.getsize(results_path) > 0:
+                self._warning(
+                    f"{batch_name or 'Scraper batch'} exited with code {exc.returncode};"
+                    f" continuing with partial results from {os.path.basename(results_path)}.",
+                    False,
+                )
+                return results_path
+            raise RuntimeError(
+                f"{batch_name or 'Scraper batch'} failed with exit code {exc.returncode}"
+                f" for {len(queries)} query(s)."
+            ) from exc
 
         if not os.path.exists(results_path):
             raise FileNotFoundError(f"Expected scraper results at {results_path}")
 
         return results_path
+
+    def _scraper_command_timeout(self, query_count: int) -> int:
+        if self.scraper_process_timeout > 0:
+            return self.scraper_process_timeout
+
+        baseline_timeout = max(
+            self.scraper_exit_on_inactivity + 60,
+            min(self.scraper_timeout, 180),
+        )
+        per_query_budget = max(45, int(self.scraper_exit_on_inactivity * 0.75))
+        depth_factor = max(1, self.scraper_depth)
+        concurrency_factor = max(1, self.scraper_concurrency)
+        scaled_timeout = baseline_timeout + (
+            query_count * per_query_budget * depth_factor
+        ) // concurrency_factor
+        return max(baseline_timeout, scaled_timeout)
 
     def _pick(self, row: dict[str, str], *keys: str) -> str:
         lowered = {str(key).strip().lower(): value for key, value in row.items()}
@@ -1014,18 +1102,43 @@ class WebsiteSalesAgent:
         if not queries:
             raise RuntimeError("No target queries could be built from config.json")
 
-        self._success(f"Prepared {len(queries)} search queries.")
+        batches = self._scrape_batches(queries)
+        self._success(
+            f"Prepared {len(queries)} search queries across {len(batches)} batch(es)."
+        )
         deduped_leads: dict[str, dict[str, object]] = {}
         raw_row_count = 0
         qualified_row_count = 0
 
-        for label, batch_queries, geo in self._scrape_batches(queries):
+        for batch_index, (label, batch_queries, geo) in enumerate(batches, start=1):
             self._check_stop()
-            results_path = self._run_scraper(
-                batch_queries,
-                geo=geo,
-                results_suffix=label if len(queries) != len(batch_queries) else "",
+            batch_name = f"Batch {batch_index}/{len(batches)}"
+            self._info(
+                f"{batch_name}: scraping {len(batch_queries)} query(s).",
+                False,
             )
+            try:
+                results_path = self._run_scraper(
+                    batch_queries,
+                    geo=geo,
+                    results_suffix=label if len(batches) > 1 else "",
+                    batch_name=batch_name,
+                )
+            except Exception as exc:
+                saved_so_far = (
+                    upsert_leads(list(deduped_leads.values()))
+                    if deduped_leads
+                    else []
+                )
+                if saved_so_far:
+                    self._warning(
+                        f"{batch_name} failed after saving {len(saved_so_far)} lead(s)"
+                        " from earlier batches.",
+                        False,
+                    )
+                raise RuntimeError(
+                    f"{batch_name} failed for {len(batch_queries)} query(s): {exc}"
+                ) from exc
 
             with open(results_path, "r", encoding="utf-8", errors="ignore") as file:
                 raw_rows = list(csv.DictReader(file))
@@ -1055,6 +1168,13 @@ class WebsiteSalesAgent:
                     deduped_leads[cluster_key] = dict(lead)
                 else:
                     deduped_leads[cluster_key] = self._merge_duplicate(existing, lead)
+
+            stored_snapshot = upsert_leads(list(deduped_leads.values()))
+            self._success(
+                f"{batch_name}: scanned {len(raw_rows)} row(s),"
+                f" saved {len(stored_snapshot)} lead(s) so far.",
+                False,
+            )
 
         if raw_row_count == 0:
             self._warning("The scraper returned no rows.")
