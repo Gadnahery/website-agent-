@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import os
+import re
 import threading
 import uuid
 import webbrowser
@@ -232,6 +233,137 @@ def _scraper_output_files() -> list[Path]:
     )
 
 
+_PREPARED_RE = re.compile(
+    r"Prepared (?P<queries>\d+) search queries(?: across (?P<batches>\d+) batch\(es\))?\."
+)
+_BATCH_START_RE = re.compile(
+    r"Batch (?P<index>\d+)/(?P<total>\d+): scraping (?P<queries>\d+) query\(s\)\."
+)
+_BATCH_DONE_RE = re.compile(
+    r"Batch (?P<index>\d+)/(?P<total>\d+): scanned (?P<rows>\d+) row\(s\), saved (?P<saved>\d+) lead\(s\) so far\."
+)
+
+
+def _mission_progress(
+    logs: list[dict[str, str]],
+    current_job: dict[str, Any] | None,
+    job_history: list[dict[str, Any]],
+) -> dict[str, Any]:
+    job = current_job or (job_history[0] if job_history else None)
+    if not job:
+        return {}
+
+    started_at = str(job.get("started_at", "")).strip()
+    job_logs = [
+        entry for entry in logs if not started_at or str(entry.get("timestamp", "")) >= started_at
+    ]
+
+    total_queries = int(job.get("meta", {}).get("query_count_estimate", 0) or 0)
+    total_batches = 0
+    batch_queries: dict[int, int] = {}
+    batch_rows: dict[int, int] = {}
+    batch_saved: dict[int, int] = {}
+    latest_message = ""
+
+    for entry in job_logs:
+        message = str(entry.get("message", "")).strip()
+        if not message:
+            continue
+        latest_message = message
+
+        prepared_match = _PREPARED_RE.search(message)
+        if prepared_match:
+            total_queries = int(prepared_match.group("queries") or total_queries or 0)
+            total_batches = int(prepared_match.group("batches") or total_batches or 1)
+
+        start_match = _BATCH_START_RE.search(message)
+        if start_match:
+            index = int(start_match.group("index"))
+            total_batches = max(total_batches, int(start_match.group("total")))
+            batch_queries[index] = int(start_match.group("queries"))
+
+        done_match = _BATCH_DONE_RE.search(message)
+        if done_match:
+            index = int(done_match.group("index"))
+            total_batches = max(total_batches, int(done_match.group("total")))
+            batch_rows[index] = int(done_match.group("rows"))
+            batch_saved[index] = int(done_match.group("saved"))
+
+    if total_batches <= 0:
+        total_batches = 1 if total_queries else 0
+
+    completed_batches = len(batch_saved)
+    started_batches = len(batch_queries)
+    running_batch = None
+    for index in sorted(batch_queries):
+        if index not in batch_saved:
+            running_batch = index
+            break
+
+    if job.get("status") == "running" and running_batch is None and started_batches:
+        running_batch = max(batch_queries)
+
+    percent = 0
+    if total_batches > 0:
+        if job.get("status") == "completed":
+            percent = 100
+        elif job.get("status") in {"failed", "cancelled"}:
+            percent = min(99, int((completed_batches / total_batches) * 100))
+        else:
+            percent = int((completed_batches / total_batches) * 100)
+            if running_batch is not None:
+                percent = min(95, percent + max(8, int(100 / (total_batches * 2))))
+
+    phase = "Waiting to start."
+    if latest_message:
+        phase = latest_message
+    if job.get("status") == "completed":
+        phase = "Mission completed successfully."
+    elif job.get("status") == "failed":
+        phase = str(job.get("error", "")).strip() or "Mission failed."
+    elif job.get("status") == "cancelled":
+        phase = str(job.get("error", "")).strip() or "Mission was stopped."
+
+    batches = []
+    for index in range(1, total_batches + 1):
+        status = "pending"
+        if index in batch_saved:
+            status = "completed"
+        elif running_batch == index and job.get("status") == "running":
+            status = "running"
+        elif job.get("status") == "failed" and index in batch_queries:
+            status = "failed"
+        elif job.get("status") == "cancelled" and index in batch_queries:
+            status = "cancelled"
+
+        batches.append(
+            {
+                "index": index,
+                "status": status,
+                "queries": batch_queries.get(index, 0),
+                "rows": batch_rows.get(index, 0),
+                "saved": batch_saved.get(index, 0),
+            }
+        )
+
+    return {
+        "job_name": str(job.get("name", "")),
+        "status": str(job.get("status", "")),
+        "stop_requested": bool(job.get("stop_requested", False)),
+        "started_at": started_at,
+        "ended_at": str(job.get("ended_at", "")).strip(),
+        "total_queries": total_queries,
+        "total_batches": total_batches,
+        "completed_batches": completed_batches,
+        "running_batch": running_batch,
+        "saved_so_far": max(batch_saved.values(), default=0),
+        "rows_scanned": sum(batch_rows.values()),
+        "percent": percent,
+        "phase": phase,
+        "batches": batches,
+    }
+
+
 class DashboardState:
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -353,6 +485,7 @@ class DashboardState:
 
         drive_status = DriveSync(logger=self.log).status()
         drive_status["recent_uploads"] = drive_uploads
+        mission_progress = _mission_progress(logs, current_job, job_history)
 
         return {
             "generated_at": _now(),
@@ -407,6 +540,7 @@ class DashboardState:
             },
             "job": current_job,
             "job_history": job_history,
+            "mission_progress": mission_progress,
             "logs": logs,
             "lead_statuses": LEAD_STATUSES,
             "search_defaults": _defaults_snapshot(),

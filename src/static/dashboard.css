@@ -476,6 +476,157 @@ button:disabled,
   line-height: 1.55;
 }
 
+.mission-progress {
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top right, rgba(11, 125, 105, 0.08), transparent 28%),
+    rgba(255, 255, 255, 0.76);
+}
+
+.mission-progress.empty {
+  color: var(--muted);
+}
+
+.mission-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: end;
+}
+
+.mission-label,
+.mission-stat span,
+.mission-batch-meta span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mission-topline strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.mission-percent {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--brand-deep);
+}
+
+.progress-track {
+  margin-top: 16px;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 37, 45, 0.08);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--brand), #129985);
+  transition: width 220ms ease;
+}
+
+.progress-fill.failed,
+.progress-fill.cancelled {
+  background: linear-gradient(135deg, var(--danger), #d46358);
+}
+
+.progress-fill.stopping {
+  background: linear-gradient(135deg, var(--accent), #e0a24f);
+}
+
+.mission-stats,
+.mission-batches {
+  display: grid;
+  gap: 12px;
+}
+
+.mission-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.mission-stat,
+.mission-batch {
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.mission-stat strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.mission-batches {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.mission-batch-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.mission-batch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mission-badge {
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mission-badge.completed {
+  background: rgba(24, 113, 79, 0.12);
+  color: var(--success);
+}
+
+.mission-badge.running {
+  background: rgba(11, 125, 105, 0.12);
+  color: var(--brand-deep);
+}
+
+.mission-badge.pending {
+  background: rgba(23, 37, 45, 0.08);
+  color: var(--muted);
+}
+
+.mission-badge.failed,
+.mission-badge.cancelled {
+  background: rgba(193, 75, 66, 0.12);
+  color: var(--danger);
+}
+
+.mission-batch.running {
+  border-color: rgba(11, 125, 105, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(11, 125, 105, 0.08);
+}
+
+.mission-batch.completed {
+  background: rgba(24, 113, 79, 0.05);
+}
+
 .results-panel {
   margin-top: 18px;
 }
@@ -705,6 +856,11 @@ button:disabled,
   .lead-spotlight {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .mission-stats,
+  .mission-batches {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1080px) {
@@ -747,6 +903,8 @@ button:disabled,
   .inline-grid,
   .advanced-grid,
   .job-meta-grid,
+  .mission-stats,
+  .mission-batches,
   .lead-spotlight {
     grid-template-columns: 1fr;
   }

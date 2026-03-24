@@ -133,6 +133,7 @@
             <span class="panel-tag">live</span>
           </div>
           <div id="job-card" class="job-card empty">No job running yet.</div>
+          <div id="mission-progress" class="mission-progress empty">Mission telemetry will appear here during each run.</div>
         </section>
 
         <section class="panel">
@@ -337,6 +338,63 @@
 
       card.className = "job-card empty";
       card.innerHTML = `<p class="job-helper">No job running yet.</p>`;
+    }
+
+    function renderMissionProgress(progress) {
+      const panel = document.getElementById("mission-progress");
+      if (!progress || !progress.total_batches) {
+        panel.className = "mission-progress empty";
+        panel.innerHTML = `<div class="empty-list">Mission telemetry will appear here during each run.</div>`;
+        return;
+      }
+
+      const batches = progress.batches || [];
+      panel.className = `mission-progress ${escapeHtml(progress.status || "idle")}`;
+      panel.innerHTML = `
+        <div class="mission-topline">
+          <div>
+            <span class="mission-label">Phase</span>
+            <strong>${escapeHtml(progress.phase || "Waiting to start.")}</strong>
+          </div>
+          <div class="mission-percent">${escapeHtml(progress.percent || 0)}%</div>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill ${escapeHtml(progress.status || "idle")}" style="width:${escapeHtml(progress.percent || 0)}%"></div>
+        </div>
+        <div class="mission-stats">
+          <div class="mission-stat">
+            <span>Batches</span>
+            <strong>${escapeHtml(progress.completed_batches || 0)} / ${escapeHtml(progress.total_batches || 0)}</strong>
+          </div>
+          <div class="mission-stat">
+            <span>Queries</span>
+            <strong>${escapeHtml(progress.total_queries || 0)}</strong>
+          </div>
+          <div class="mission-stat">
+            <span>Rows scanned</span>
+            <strong>${escapeHtml(progress.rows_scanned || 0)}</strong>
+          </div>
+          <div class="mission-stat">
+            <span>Leads saved</span>
+            <strong>${escapeHtml(progress.saved_so_far || 0)}</strong>
+          </div>
+        </div>
+        <div class="mission-batches">
+          ${batches.map((batch) => `
+            <div class="mission-batch ${escapeHtml(batch.status)}">
+              <div class="mission-batch-head">
+                <strong>Batch ${escapeHtml(batch.index)}</strong>
+                <span class="mission-badge ${escapeHtml(batch.status)}">${escapeHtml(batch.status)}</span>
+              </div>
+              <div class="mission-batch-meta">
+                <span>${escapeHtml(batch.queries || 0)} queries</span>
+                <span>${escapeHtml(batch.rows || 0)} rows</span>
+                <span>${escapeHtml(batch.saved || 0)} saved</span>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
     }
 
     function renderHistory(history) {
@@ -631,6 +689,7 @@
       renderMetrics(data.metrics || {});
       renderPresets(data.search_presets || []);
       renderJob(data.job, data.job_history || []);
+      renderMissionProgress(data.mission_progress || {});
       renderHistory(data.job_history || []);
       renderSearchBrief(data.last_discovery_profile || {});
       renderDrive(data.drive || {});
