@@ -783,6 +783,20 @@ class WebsiteSalesAgent:
             text = text[:index]
         return text.strip(" ,").title()
 
+    def _infer_category_from_title(self, title: str) -> str:
+        lowered = normalize_text(title)
+        if "barber" in lowered:
+            return "Barbershop"
+        if "salon" in lowered and "spa" in lowered:
+            return "Salon & Spa"
+        if "salon" in lowered:
+            return "Salon"
+        if "spa" in lowered:
+            return "Beauty Spa"
+        if "massage" in lowered:
+            return "Massage"
+        return ""
+
     def _city_priority_bonus(self, city: str) -> tuple[int, list[str]]:
         haystack = city.lower()
         for name, bonus in CITY_PRIORITY_BONUSES.items():
@@ -1024,6 +1038,8 @@ class WebsiteSalesAgent:
         category = self._pick(row, "category")
         if not category:
             category = self._query_category(query)
+        if not category:
+            category = self._infer_category_from_title(title)
         address = self._pick(row, "complete_address", "address")
         website = self._pick(row, "website")
         phone = normalize_phone(self._pick(row, "phone"))
@@ -1074,6 +1090,20 @@ class WebsiteSalesAgent:
             "updated_at": current_timestamp(),
         }
 
+    def _refresh_lead_score(self, lead: dict[str, object]) -> None:
+        score, reasons = self._score_lead(
+            title=str(lead.get("business_name", "")),
+            category=str(lead.get("category", "")),
+            city=str(lead.get("city", "")),
+            phone=str(lead.get("phone", "")),
+            website_status=str(lead.get("website_status", "")),
+            review_count=int(lead.get("review_count", 0)),
+            review_rating=float(lead.get("review_rating", 0.0)),
+            has_description=bool(str(lead.get("description", "")).strip()),
+        )
+        lead["score"] = score
+        lead["score_reasons"] = reasons[:5]
+
     def _passes_filters(self, lead: dict[str, object]) -> bool:
         if self.must_have_phone and not str(lead.get("phone", "")).strip():
             return False
@@ -1113,6 +1143,12 @@ class WebsiteSalesAgent:
         for batch_index, (label, batch_queries, geo) in enumerate(batches, start=1):
             self._check_stop()
             batch_name = f"Batch {batch_index}/{len(batches)}"
+            batch_locations = {
+                location
+                for location in [self._query_location(query) for query in batch_queries]
+                if location
+            }
+            batch_city = next(iter(batch_locations), "") if len(batch_locations) == 1 else ""
             self._info(
                 f"{batch_name}: scraping {len(batch_queries)} query(s).",
                 False,
@@ -1149,7 +1185,21 @@ class WebsiteSalesAgent:
                 query = self._query_from_input_id(
                     self._pick(row, "input_id"), batch_queries
                 )
+                if not query and len(batch_queries) == 1:
+                    query = batch_queries[0]
                 lead = self._normalize_lead(row, query)
+                if batch_city and (
+                    not str(lead.get("city", "")).strip()
+                    or str(lead.get("city", "")) == self.country
+                ):
+                    lead["city"] = batch_city
+                if not str(lead.get("category", "")).strip():
+                    inferred_category = self._infer_category_from_title(
+                        str(lead.get("business_name", ""))
+                    )
+                    if inferred_category:
+                        lead["category"] = inferred_category
+                self._refresh_lead_score(lead)
 
                 if not lead["business_name"]:
                     continue
